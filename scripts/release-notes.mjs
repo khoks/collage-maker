@@ -11,7 +11,9 @@ const start = changelog.indexOf(`## [${version}]`);
 if (start < 0) throw new Error(`CHANGELOG.md has no "## [${version}]" section`);
 const rest = changelog.slice(start);
 const next = rest.indexOf('\n## [', 1);
-const section = (next < 0 ? rest : rest.slice(0, next)).split('\n').slice(1).join('\n').trim();
+const section = (next < 0 ? rest : rest.slice(0, next)).split('\n').slice(1)
+  .filter((line) => !/^\[[^\]]+\]:\s*https?:\/\//.test(line))   // link references at the end of CHANGELOG.md
+  .join('\n').trim();
 
 process.stdout.write(`${section}
 
