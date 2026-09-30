@@ -116,7 +116,8 @@ jobs:
           collage-maker --dry-run
           desktop-file-validate /usr/share/applications/collage-maker.desktop
           sudo apt-get remove -y collage-maker
-          ! command -v collage-maker
+          test ! -e /usr/bin/collage-maker
+          test ! -e /usr/share/collage-maker
 
       - name: install.sh (install, shortcut, uninstall)
         run: |
