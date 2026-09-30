@@ -22,4 +22,13 @@ for (const [file, re] of VERSION_SITES) {
   await writeFile(path, text.slice(0, at) + version + text.slice(at + m[1].length));
   console.log(`${file}: ${m[1]} -> ${version}`);
 }
-console.log(`Now add a "## [${version}]" section to CHANGELOG.md.`);
+
+// package-lock.json repeats the version for the root package.
+const lockPath = join(root, 'package-lock.json');
+const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+lock.version = version;
+if (lock.packages && lock.packages['']) lock.packages[''].version = version;
+await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+console.log(`package-lock.json -> ${version}`);
+
+console.log(`Now move the "Unreleased" notes in CHANGELOG.md under "## [${version}] - YYYY-MM-DD" and update the links at the bottom.`);

@@ -8,6 +8,7 @@
 # and adds Collage Maker to Launchpad (macOS) or your desktop's app menu (Linux).
 # https://github.com/khoks/collage-maker
 set -eu
+unset CDPATH  # an exported CDPATH would make 'cd' print paths and break the lookups below
 
 REPO=khoks/collage-maker
 PREFIX=${COLLAGE_MAKER_PREFIX:-$HOME/.local}
@@ -115,8 +116,8 @@ sha256_of() {
   fi
 }
 
-# Run from inside an extracted download (./install.sh) without --from: use that copy.
-if [ -z "$FROM" ]; then
+# Run from inside an extracted download (./install.sh) without --from or --version: use that copy.
+if [ -z "$FROM" ] && [ -z "$VERSION" ]; then
   case $0 in
     */install.sh|install.sh)
       here=$(cd "$(dirname "$0")" && pwd)

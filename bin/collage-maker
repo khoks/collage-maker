@@ -5,6 +5,7 @@
 # or Vivaldi), or in a normal tab of the default browser when none of those is installed.
 # https://github.com/khoks/collage-maker
 set -eu
+unset CDPATH  # an exported CDPATH would make 'cd' print paths and break the lookups below
 
 VERSION=1.0.0
 REPO_URL=https://github.com/khoks/collage-maker
@@ -29,7 +30,8 @@ Usage: collage-maker [option]
   --help                show this help
 
 Set COLLAGE_MAKER_BROWSER to a browser command (Linux) or app name/path (macOS)
-to choose the browser yourself.
+to choose the browser yourself. Chrome, Edge, Brave, Chromium, Vivaldi and Opera
+open it as an app window; other browsers open it in a normal window.
 
 More help: $REPO_URL
 EOF
@@ -64,7 +66,7 @@ invoked_path() {
 find_html() {
   if [ -n "${COLLAGE_MAKER_HTML:-}" ]; then
     [ -f "$COLLAGE_MAKER_HTML" ] || die "COLLAGE_MAKER_HTML points to a missing file: $COLLAGE_MAKER_HTML"
-    printf '%s\n' "$COLLAGE_MAKER_HTML"
+    printf '%s/%s\n' "$(cd -P "$(dirname "$COLLAGE_MAKER_HTML")" && pwd)" "$(basename "$COLLAGE_MAKER_HTML")"
     return
   fi
   # Installed or portable bundle: the HTML sits next to this script. Source checkout: ../app/index.html.
@@ -132,17 +134,19 @@ launch() {
 }
 
 # ------------------------------------------------------------------ macOS
-mac_app() {  # prints the .app path of the first installed Chromium-based browser
+mac_app() {  # prints the .app path of the chosen browser, or of the first installed Chromium one
   if [ -n "${COLLAGE_MAKER_BROWSER:-}" ]; then
     case $COLLAGE_MAKER_BROWSER in
       /*) [ -d "$COLLAGE_MAKER_BROWSER" ] && { printf '%s\n' "$COLLAGE_MAKER_BROWSER"; return 0; } ;;
     esac
-    set -- "$COLLAGE_MAKER_BROWSER"
-  else
+    set -- "${COLLAGE_MAKER_BROWSER%.app}"
+  elif [ "$USE_APP_WINDOW" = 1 ]; then
     set -- 'Google Chrome' 'Microsoft Edge' 'Brave Browser' 'Chromium' 'Vivaldi'
+  else
+    return 1
   fi
   for name in "$@"; do
-    for dir in /Applications "$HOME/Applications"; do
+    for dir in /Applications "$HOME/Applications" /System/Applications /System/Volumes/Preboot/Cryptexes/App/System/Applications; do
       if [ -d "$dir/$name.app" ]; then
         printf '%s\n' "$dir/$name.app"
         return 0
@@ -154,15 +158,29 @@ mac_app() {  # prints the .app path of the first installed Chromium-based browse
 
 MAC_BUNDLE_IDS='com.google.Chrome com.microsoft.edgemac com.brave.Browser org.chromium.Chromium com.vivaldi.Vivaldi'
 
+# True if the .app at $1 is a Chromium-based browser (only those understand --app).
+mac_is_chromium() {
+  id=$(defaults read "$1/Contents/Info" CFBundleIdentifier 2>/dev/null || true)
+  case $id in
+    com.google.Chrome* | com.microsoft.edgemac* | com.brave.Browser* | org.chromium.Chromium* | \
+      com.vivaldi.Vivaldi* | com.operasoftware.Opera*) return 0 ;;
+  esac
+  return 1
+}
+
 open_mac() {
   url="file://$(urlencode "$HTML")"
-  if [ "$USE_APP_WINDOW" = 1 ]; then
-    # -n makes a new launch request, so --app reaches a browser that is already running
-    # (the new process hands the window over to the running one and exits).
-    if app=$(mac_app); then
+  if app=$(mac_app); then
+    if [ "$USE_APP_WINDOW" = 1 ] && mac_is_chromium "$app"; then
+      # -n makes a new launch request, so --app reaches a browser that is already running
+      # (the new process hands the window over to the running one and exits).
       run open -na "$app" --args "--app=$url"
-      return
+    else
+      run open -a "$app" "$HTML"
     fi
+    return
+  fi
+  if [ "$USE_APP_WINDOW" = 1 ]; then
     # Browsers installed outside /Applications: let Launch Services find them by bundle ID.
     if [ "$DRY_RUN" != 1 ] && [ -z "${COLLAGE_MAKER_BROWSER:-}" ]; then
       for id in $MAC_BUNDLE_IDS; do
@@ -220,9 +238,11 @@ flatpak_browser() {  # prints the app ID of the first installed Chromium-based F
   return 1
 }
 
-linux_browser() {  # prints the path of the first installed Chromium-based browser command
+linux_browser() {  # prints the path of the chosen browser, or of the first installed Chromium one
   if [ -n "${COLLAGE_MAKER_BROWSER:-}" ]; then
     set -- "$COLLAGE_MAKER_BROWSER"
+  elif [ "$USE_APP_WINDOW" != 1 ]; then
+    return 1
   else
     set -- google-chrome google-chrome-stable microsoft-edge microsoft-edge-stable \
       brave-browser brave-browser-stable brave chromium chromium-browser vivaldi vivaldi-stable
@@ -252,13 +272,25 @@ prepare_for_default_browser() {
   esac
 }
 
+# True if the browser command at $1 is Chromium-based (only those understand --app).
+linux_is_chromium() {
+  case ${1##*/} in
+    *chrome* | *chromium* | *edge* | *brave* | *vivaldi* | *opera*) return 0 ;;
+  esac
+  return 1
+}
+
 open_linux() {
-  if [ "$USE_APP_WINDOW" = 1 ]; then
-    if browser=$(linux_browser); then
-      prepare_for_snap "$browser"
+  if browser=$(linux_browser); then
+    prepare_for_snap "$browser"
+    if [ "$USE_APP_WINDOW" = 1 ] && linux_is_chromium "$browser"; then
       launch "$browser" "--app=file://$(urlencode "$HTML")"
-      return
+    else
+      launch "$browser" "$HTML"
     fi
+    return
+  fi
+  if [ "$USE_APP_WINDOW" = 1 ]; then
     if app_id=$(flatpak_browser); then
       use_copy_in "$HOME/.var/app/$app_id/data/collage-maker"
       launch flatpak run "$app_id" "--app=file://$(urlencode "$HTML")"
@@ -286,47 +318,61 @@ mac_bundle() {
 # Quotes a path for the Exec key of a .desktop file. The sed expressions are single-quoted on purpose.
 # shellcheck disable=SC2016
 desktop_quote() {
-  printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\\\\\/g' -e 's/"/\\\\"/g' -e 's/`/\\\\`/g' -e 's/\$/\\\\$/g')"
+  printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\\\\\/g' -e 's/"/\\\\"/g' -e 's/`/\\\\`/g' -e 's/\$/\\\\$/g' -e 's/%/%%/g')"
+}
+
+BUNDLE_ID=io.github.khoks.collage-maker
+
+# True if the .app at $1 was made by --install-shortcut (so it is safe to replace or remove).
+mac_bundle_is_ours() {
+  [ "$(defaults read "$1/Contents/Info" CFBundleIdentifier 2>/dev/null || true)" = "$BUNDLE_ID" ]
+}
+
+# Escapes a string for use inside an AppleScript "string literal".
+applescript_string() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+install_mac_app() {  # $1 = command the app should run
+  app=$(mac_bundle)
+  if [ -e "$app" ] && ! mac_bundle_is_ours "$app"; then
+    die "$app already exists and was not created by collage-maker; leaving it alone"
+  fi
+  command -v osacompile >/dev/null 2>&1 || die "osacompile is missing, so the app cannot be created"
+  work=$(mktemp -d "${TMPDIR:-/tmp}/collage-maker.XXXXXX")
+  new="$work/$APP_NAME.app"
+  # osacompile writes a small universal (Apple silicon + Intel) app that runs our command, so macOS
+  # never asks to install Rosetta the way it can for an app whose executable is a shell script.
+  # The command runs in the background so the little app quits straight away.
+  osacompile -o "$new" -e "do shell script quoted form of \"$(applescript_string "$1")\" & \" >/dev/null 2>&1 &\"" >/dev/null
+  plist="$new/Contents/Info.plist"
+  plutil -replace CFBundleIdentifier -string "$BUNDLE_ID" "$plist"
+  plutil -replace CFBundleName -string "$APP_NAME" "$plist"
+  plutil -replace CFBundleShortVersionString -string "$VERSION" "$plist"
+  plutil -replace CFBundleVersion -string "$VERSION" "$plist"
+  plutil -replace LSUIElement -bool true "$plist"
+  plutil -replace LSRequiresNativeExecution -bool true "$plist"
+  plutil -replace CFBundleIconFile -string applet "$plist"
+  plutil -remove CFBundleIconName "$plist" >/dev/null 2>&1 || true
+  rm -f "$new/Contents/Resources/Assets.car"
+  # cat rather than cp, so a quarantine flag on a browser-downloaded copy is not carried into the app.
+  if icns=$(find_icon icns); then cat "$icns" >"$new/Contents/Resources/applet.icns"; fi
+  # Editing the bundle invalidated osacompile's signature; sign it again (ad hoc, as osacompile does).
+  codesign --force --sign - "$new" >/dev/null 2>&1 || true
+  mkdir -p "$(dirname "$app")"
+  rm -rf "$app"
+  mv "$new" "$app"
+  rm -rf "$work"
+  lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+  if [ -x "$lsregister" ]; then "$lsregister" -f "$app" >/dev/null 2>&1 || true; fi
+  printf 'Added %s. Find it in Launchpad or Spotlight.\n' "$app"
 }
 
 install_shortcut() {
   exe=$(invoked_path)
   case $(uname -s) in
     Darwin)
-      app=$(mac_bundle)
-      rm -rf "$app"
-      mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-      cat >"$app/Contents/Info.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleName</key><string>$APP_NAME</string>
-  <key>CFBundleDisplayName</key><string>$APP_NAME</string>
-  <key>CFBundleIdentifier</key><string>io.github.khoks.collage-maker</string>
-  <key>CFBundleVersion</key><string>$VERSION</string>
-  <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleExecutable</key><string>collage-maker</string>
-  <key>CFBundleIconFile</key><string>collage-maker</string>
-  <key>LSMinimumSystemVersion</key><string>10.13</string>
-  <key>LSUIElement</key><true/>
-</dict>
-</plist>
-EOF
-      {
-        printf '#!/bin/sh\n'
-        printf '# Opens Collage Maker. Created by "collage-maker --install-shortcut".\n'
-        printf 'exec %s "$@"\n' "'$(printf '%s' "$exe" | sed "s/'/'\\\\''/g")'"
-      } >"$app/Contents/MacOS/collage-maker"
-      chmod 755 "$app/Contents/MacOS/collage-maker"
-      # cat rather than cp, so a quarantine flag on a browser-downloaded copy is not carried into the app.
-      if icns=$(find_icon icns); then cat "$icns" >"$app/Contents/Resources/collage-maker.icns"; fi
-      touch "$app"
-      lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-      if [ -x "$lsregister" ]; then "$lsregister" -f "$app" >/dev/null 2>&1 || true; fi
-      printf 'Added %s. Find it in Launchpad or Spotlight.\n' "$app"
+      install_mac_app "$exe"
       ;;
     *)
       file=$(desktop_file)
@@ -358,7 +404,13 @@ EOF
 
 uninstall_shortcut() {
   case $(uname -s) in
-    Darwin) target=$(mac_bundle) ;;
+    Darwin)
+      target=$(mac_bundle)
+      if [ -e "$target" ] && ! mac_bundle_is_ours "$target"; then
+        printf '%s was not created by collage-maker; leaving it alone.\n' "$target"
+        return 0
+      fi
+      ;;
     *) target=$(desktop_file) ;;
   esac
   if [ -e "$target" ]; then

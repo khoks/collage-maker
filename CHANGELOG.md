@@ -6,13 +6,13 @@ All notable changes to Collage Maker are listed here. The format follows
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-09-29
+## [1.0.0] - 2026-09-30
 
 First public release.
 
 - Drop, paste or browse for photos; they are laid out in an even grid with white borders and gaps.
 - Padding slider from 0 to 400 px, applied to the outer border and the gaps alike.
-- Four canvas shapes: **Fit** (follows your photos so same-shape photos are not cropped, 7680 px long edge),
+- Four canvas shapes: **Fit** (follows your photos, so photos of the same shape are usually not cropped at all; 7680 px long edge),
   **Landscape** 7680 × 4320, **Portrait** 4320 × 7680 and **Square** 7680 × 7680.
 - Saves a full-resolution JPEG, with a Save As dialog in Edge and Chrome and a download elsewhere.
 - Drag a photo onto another to swap them, right-click to remove one, Ctrl/⌘+Z to undo a removal or New.

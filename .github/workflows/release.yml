@@ -96,13 +96,15 @@ jobs:
     needs: update-packages
     if: ${{ !cancelled() && (needs.update-packages.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
+    env:
+      COLLAGE_MAKER_VERSION: ${{ inputs.tag || github.ref_name }}
     steps:
       - name: Debian package from the release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          tag=${{ inputs.tag || github.ref_name }}
-          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern collage-maker.deb --dir "$RUNNER_TEMP"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern collage-maker.deb --dir "$RUNNER_TEMP"
           sudo apt-get install -y "$RUNNER_TEMP/collage-maker.deb"
           collage-maker --version
           collage-maker --dry-run
@@ -125,6 +127,8 @@ jobs:
     needs: update-packages
     if: ${{ !cancelled() && (needs.update-packages.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: macos-latest
+    env:
+      COLLAGE_MAKER_VERSION: ${{ inputs.tag || github.ref_name }}
     steps:
       - name: Homebrew from the tap
         run: |
@@ -149,6 +153,8 @@ jobs:
     needs: update-packages
     if: ${{ !cancelled() && (needs.update-packages.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: windows-latest
+    env:
+      COLLAGE_MAKER_VERSION: ${{ inputs.tag || github.ref_name }}
     steps:
       - name: install.ps1 from main (irm | iex)
         shell: powershell

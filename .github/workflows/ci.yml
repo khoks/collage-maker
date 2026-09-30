@@ -70,9 +70,17 @@ jobs:
         run: node scripts/build.mjs
       - name: ShellCheck
         run: shellcheck bin/collage-maker install.sh
+      - name: Release helpers work on this build
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('bucket/collage-maker.json', 'utf8'))"
+          node scripts/update-packages.mjs "$(cat VERSION)" dist/SHA256SUMS
+          git diff --stat
+          git checkout -- Formula bucket
+          node scripts/release-notes.mjs "$(cat VERSION)" > /dev/null
 
       - name: Launcher works in dash, bash and busybox sh
         run: |
+          sudo apt-get update
           sudo apt-get install -y busybox
           for sh in dash bash "busybox sh"; do
             echo "== $sh"
@@ -105,7 +113,6 @@ jobs:
 
       - name: Debian package
         run: |
-          sudo apt-get update
           sudo apt-get install -y lintian desktop-file-utils
           dpkg-deb --info dist/collage-maker.deb
           dpkg-deb --contents dist/collage-maker.deb
@@ -165,14 +172,30 @@ jobs:
         run: |
           sh install.sh --from dist/collage-maker.tar.gz
           app="$HOME/Applications/Collage Maker.app"
-          plutil -lint "$app/Contents/Info.plist"
-          test -x "$app/Contents/MacOS/collage-maker"
-          test -s "$app/Contents/Resources/collage-maker.icns"
-          "$app/Contents/MacOS/collage-maker" --version
+          plist="$app/Contents/Info.plist"
+          plutil -lint "$plist"
+          test "$(plutil -extract CFBundleIdentifier raw "$plist")" = io.github.khoks.collage-maker
+          test "$(plutil -extract LSUIElement raw "$plist")" = true
+          # A native universal executable, so Apple silicon Macs never ask for Rosetta.
+          lipo -archs "$app/Contents/MacOS/applet" | tee /dev/stderr | grep -q arm64
+          codesign --verify --verbose "$app"
+          test -s "$app/Contents/Resources/applet.icns"
+          osadecompile "$app/Contents/Resources/Scripts/main.scpt" | tee /dev/stderr | grep -F "$HOME/.local/bin/collage-maker"
           test "$(~/.local/bin/collage-maker --path)" = "$HOME/.local/share/collage-maker/collage-maker.html"
           sh ~/.local/share/collage-maker/install.sh --uninstall
           test ! -e "$app"
           test ! -e ~/.local/share/collage-maker
+      - name: Shortcut never replaces an app it did not create
+        run: |
+          app="$HOME/Applications/Collage Maker.app"
+          mkdir -p "$app/Contents"
+          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.apple.Safari.WebApp.test</string></dict></plist>' \
+            > "$app/Contents/Info.plist"
+          if bin/collage-maker --install-shortcut; then echo "::error::replaced a foreign app"; exit 1; fi
+          bin/collage-maker --uninstall-shortcut
+          test "$(plutil -extract CFBundleIdentifier raw "$app/Contents/Info.plist")" = com.apple.Safari.WebApp.test
+          rm -rf "$app"
       - name: Homebrew (formula against this build)
         run: |
           scripts/ci-brew-local.sh
@@ -210,3 +233,11 @@ jobs:
       - name: install.ps1 in PowerShell 7, run the way "irm | iex" runs it
         shell: pwsh
         run: scripts\ci-install-ps1.ps1 -Zip dist\collage-maker.zip -AsScriptBlock
+      - name: Scoop manifest parses in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $m = Get-Content -Raw bucket\collage-maker.json | ConvertFrom-Json
+          if ($m.bin -ne 'collage-maker.cmd') { throw 'bucket/collage-maker.json: unexpected bin' }
+      - name: Scoop (manifest against this build)
+        shell: pwsh
+        run: scripts\ci-scoop-local.ps1

@@ -1,7 +1,8 @@
 # Security policy
 
-Collage Maker runs entirely in your browser, makes no network requests and never uploads your photos.
-The installers only download release files from this repository and check their SHA-256 checksums.
+Collage Maker runs entirely in your browser and never uploads your photos. The downloaded app makes no network
+requests; the hosted web version only loads its own files from khoks.github.io. The installers only download release
+files from this repository and check their SHA-256 checksums.
 
 ## Reporting a vulnerability
 

@@ -109,6 +109,22 @@ test.describe('Collage Maker', () => {
     expect(await page.evaluate(() => window.__collage.state.photos.map((p) => p.name))).toEqual(['photo-1.jpg', 'photo-2.jpg', 'photo-3.jpg']);
   });
 
+  test('a right-click that follows a press (Control+click on a Mac) still removes the photo', async ({ page }) => {
+    await dropPhotos(page, landscape(3));
+    const names = await page.evaluate(() => {
+      const c = document.getElementById('preview');
+      const v = window.__collage.view();
+      const b = c.getBoundingClientRect();
+      const r = v.rects[1];
+      const at = { clientX: b.left + (r.x + r.w / 2) * b.width / v.W, clientY: b.top + (r.y + r.h / 2) * b.height / v.H, bubbles: true };
+      c.dispatchEvent(new PointerEvent('pointerdown', { ...at, button: 0, pointerId: 7, ctrlKey: true }));
+      c.dispatchEvent(new MouseEvent('contextmenu', { ...at, button: 2, ctrlKey: true, cancelable: true }));
+      c.dispatchEvent(new PointerEvent('pointerup', { ...at, button: 0, pointerId: 7 }));
+      return window.__collage.state.photos.map((p) => p.name);
+    });
+    expect(names).toEqual(['photo-1.jpg', 'photo-3.jpg']);
+  });
+
   test('dragging one photo onto another swaps them', async ({ page }) => {
     await dropPhotos(page, landscape(4));
     const box = await page.locator('#preview').boundingBox();

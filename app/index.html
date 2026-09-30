@@ -691,7 +691,7 @@
       setStatus(msg, 'error');
     } finally {
       state.saving = false;
-      saveBtn.disabled = !state.photos.length;
+      saveBtn.disabled = !state.photos.length || loadsInFlight > 0;
     }
   }
 
@@ -704,7 +704,8 @@
   }
 
   canvas.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
+    // On a Mac, Control+click is a right-click (remove), not the start of a drag.
+    if (e.button !== 0 || (IS_MAC && e.ctrlKey)) return;
     const i = cellAt(e);
     if (i < 0) return;
     state.drag = { from: i, startX: e.clientX, startY: e.clientY, active: false, over: i };
@@ -743,7 +744,9 @@
 
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    if (state.drag) { endDrag(e, false); return; }
+    // A right-click in the middle of a drag cancels the drag; otherwise it removes the photo.
+    if (state.drag && state.drag.active) { endDrag(e, false); return; }
+    if (state.drag) endDrag(null, false);
     const i = cellAt(e);
     if (i >= 0) removePhoto(i);
   });

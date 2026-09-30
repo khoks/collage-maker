@@ -20,15 +20,19 @@ for (const name of ['collage-maker.tar.gz', 'collage-maker.zip']) {
 }
 const base = `https://github.com/khoks/collage-maker/releases/download/v${version}`;
 
+// Read and check both files before writing either, so a problem never leaves a half-updated tree.
 const formulaPath = join(root, 'Formula', 'collage-maker.rb');
+const bucketPath = join(root, 'bucket', 'collage-maker.json');
+const manifest = JSON.parse(await readFile(bucketPath, 'utf8'));
 let formula = await readFile(formulaPath, 'utf8');
+if (!/^ {2}url "[^"]*"$/m.test(formula) || !/^ {2}sha256 "[^"]*"$/m.test(formula)) {
+  throw new Error('Formula/collage-maker.rb: url or sha256 line not found');
+}
 formula = formula
   .replace(/^( {2}url )"[^"]*"$/m, `$1"${base}/collage-maker.tar.gz"`)
   .replace(/^( {2}sha256 )"[^"]*"$/m, `$1"${sums['collage-maker.tar.gz']}"`);
 await writeFile(formulaPath, formula);
 
-const bucketPath = join(root, 'bucket', 'collage-maker.json');
-const manifest = JSON.parse(await readFile(bucketPath, 'utf8'));
 manifest.version = version;
 manifest.url = `${base}/collage-maker.zip`;
 manifest.hash = sums['collage-maker.zip'];

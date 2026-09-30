@@ -2,6 +2,8 @@
 // Network first, so visitors always get the latest version when online;
 // the cached copy is used when there is no connection.
 const CACHE = 'collage-maker-1.0.0';
+// Other apps can share this origin (e.g. <user>.github.io), so only our own old caches are removed.
+const PREFIX = 'collage-maker-';
 const ASSETS = [
   './',
   './index.html',
@@ -19,7 +21,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith(PREFIX) && key !== CACHE).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
 });

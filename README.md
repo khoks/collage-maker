@@ -17,8 +17,9 @@ and never sends your photos anywhere.
 - **Drag and drop** photos from your file manager, paste them, or browse for them.
 - **Even white borders** around and between the photos, with a **padding slider** from 0 to 400 px.
 - **8K output** saved as a high-quality JPEG.
-- **Fit** mode keeps your photos whole: the canvas takes their shape, so four phone photos are never cropped.
-  Fixed **Landscape**, **Portrait** and **Square** 8K canvases are one click away.
+- **Fit** mode keeps your photos whole: the canvas takes their shape, so two or four photos from the same phone
+  (all landscape or all portrait) are never cropped. Fixed **Landscape**, **Portrait** and **Square** 8K canvases
+  are one click away.
 - **Rearrange** by dragging one photo onto another. Right-click removes a photo; Ctrl/⌘+Z undoes it.
 - **New** clears the canvas for the next collage. Nothing is stored between sessions.
 - Handles phone photos properly, including their rotation (EXIF orientation).
@@ -63,15 +64,20 @@ curl -fsSL https://raw.githubusercontent.com/khoks/collage-maker/main/install.sh
 **Debian, Ubuntu, Mint, Pop!_OS** and other apt-based systems:
 
 ```sh
-curl -fsSLO https://github.com/khoks/collage-maker/releases/latest/download/collage-maker.deb
+wget https://github.com/khoks/collage-maker/releases/latest/download/collage-maker.deb
 sudo apt install ./collage-maker.deb
 ```
+
+Or download [`collage-maker.deb`](https://github.com/khoks/collage-maker/releases/latest/download/collage-maker.deb)
+in your browser and open it with your software installer.
 
 **Any distribution**, with the install script (no sudo; adds it to your app menu):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/khoks/collage-maker/main/install.sh | sh
+wget -qO- https://raw.githubusercontent.com/khoks/collage-maker/main/install.sh | sh
 ```
+
+(`curl -fsSL <url> | sh` works too, if you have curl rather than wget.)
 
 [Homebrew on Linux](https://docs.brew.sh/Homebrew-on-Linux) works too, with the same commands as on macOS.
 
@@ -79,8 +85,8 @@ curl -fsSL https://raw.githubusercontent.com/khoks/collage-maker/main/install.sh
 
 Download [`collage-maker.zip`](https://github.com/khoks/collage-maker/releases/latest/download/collage-maker.zip),
 unzip it, and double-click **`collage-maker.html`**. That's the whole app; copy it to a USB stick or send it to a
-friend. On Windows, `collage-maker.cmd` opens it in its own window, and `install.ps1` (right-click › Run with
-PowerShell) installs it properly.
+friend. On Windows, `collage-maker.cmd` opens it in its own window. To install from the unzipped folder, right-click
+`install.ps1` › *Run with PowerShell*, and answer **Y** if Windows asks about the execution policy.
 
 ### As a web app
 
@@ -109,7 +115,7 @@ Photos are added in filename order.
 
 | Canvas | Size | Cropping |
 |---|---|---|
-| **Fit** (default) | 7680 px on the long edge; the other edge follows your photos | None for 2, 4, 6 or 9 photos of the same shape, and usually none for other counts; the status bar always shows how much is cropped |
+| **Fit** (default) | 7680 px on the long edge; the other edge follows your photos | None for 1, 2, 3, 4, 6, 8 or 9 photos of the same shape (for example all from one phone, all landscape or all portrait). With 5 or 7 photos, or a mix of portrait and landscape, some photos are trimmed; the status bar always shows how much |
 | **Landscape** | 7680 × 4320 (8K UHD) | Photos are centre-cropped to fill their cells |
 | **Portrait** | 4320 × 7680 | Photos are centre-cropped to fill their cells |
 | **Square** | 7680 × 7680 | Photos are centre-cropped to fill their cells |
@@ -126,8 +132,13 @@ collage-maker --path              print where the app file is
 collage-maker --help              all options
 ```
 
-It opens the app in Chrome, Edge, Brave, Chromium or Vivaldi as a standalone window, or in your default browser if
-none of those is installed. Set `COLLAGE_MAKER_BROWSER` to choose the browser yourself.
+It opens the app in Chrome, Edge, Brave, Chromium or Vivaldi as a standalone window (on Windows: Edge, Chrome or
+Brave), or in your default browser if none of those is installed. To choose the browser yourself, set
+`COLLAGE_MAKER_BROWSER`, for example `COLLAGE_MAKER_BROWSER=Safari collage-maker` on a Mac. Browsers that aren't
+based on Chromium, such as Safari and Firefox, open it in a normal window.
+
+The install script puts the command in `~/.local/bin`. If your shell says `collage-maker: command not found`, run
+`~/.local/bin/collage-maker` or add `~/.local/bin` to your `PATH`.
 
 ## Uninstall
 
@@ -137,16 +148,20 @@ none of those is installed. Set `COLLAGE_MAKER_BROWSER` to choose the browser yo
 | Scoop | `scoop uninstall collage-maker` |
 | Homebrew | `collage-maker --uninstall-shortcut` (if you added one), then `brew uninstall collage-maker` |
 | apt | `sudo apt remove collage-maker` |
-| Install script | `curl -fsSL https://raw.githubusercontent.com/khoks/collage-maker/main/install.sh \| sh -s -- --uninstall` |
+| Install script | `sh ~/.local/share/collage-maker/install.sh --uninstall` |
 | Portable | Delete the folder |
 
 ## Questions
 
 **Are my photos uploaded anywhere?**
-No. Everything happens inside your browser, even on the web version. The app makes no network requests at all.
+No. Your photos are processed entirely inside your browser and never leave your computer. The downloaded app makes
+no network requests at all; the web version only loads its own files from khoks.github.io (so it can update itself
+and work offline).
 
 **My iPhone photos (HEIC) won't load.**
-Most browsers can't read HEIC. Convert them to JPG first (the Photos app on Windows and Mac can), or use Safari, which reads HEIC.
+Most browsers can't read HEIC. Convert them to JPG first (the Photos app on Windows and Mac can), or use Safari,
+which reads HEIC: open the [web version](https://khoks.github.io/collage-maker/) in Safari, or run
+`COLLAGE_MAKER_BROWSER=Safari collage-maker`.
 
 **Windows says "Windows protected your PC" when I open `collage-maker.cmd` from the zip.**
 Windows warns about any downloaded script. Click *More info* › *Run anyway*, or use the PowerShell installer instead,

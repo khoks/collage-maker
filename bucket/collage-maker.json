@@ -9,12 +9,12 @@
     "bin": "collage-maker.cmd",
     "post_install": [
         "$cmFolder = if ($global) { 'CommonPrograms' } else { 'Programs' }",
-        "$cmLink = Join-Path ([Environment]::GetFolderPath($cmFolder)) 'Scoop Apps\Collage Maker.lnk'",
-        "& \"$dir\install.ps1\" -ShortcutFor \"$dir\" -ShortcutPath $cmLink"
+        "$cmLink = Join-Path (Join-Path ([Environment]::GetFolderPath($cmFolder)) 'Scoop Apps') 'Collage Maker.lnk'",
+        "& (Join-Path $dir 'install.ps1') -ShortcutFor $dir -ShortcutPath $cmLink"
     ],
     "pre_uninstall": [
         "$cmFolder = if ($global) { 'CommonPrograms' } else { 'Programs' }",
-        "Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath($cmFolder)) 'Scoop Apps\Collage Maker.lnk') -Force -ErrorAction SilentlyContinue"
+        "Remove-Item -LiteralPath (Join-Path (Join-Path ([Environment]::GetFolderPath($cmFolder)) 'Scoop Apps') 'Collage Maker.lnk') -Force -ErrorAction SilentlyContinue"
     ],
     "notes": "Open Collage Maker from the Start menu (Scoop Apps > Collage Maker), or run 'collage-maker'.",
     "checkver": "github",

@@ -3,7 +3,7 @@ rem Collage Maker launcher for Windows.
 rem Opens the app in its own window using Microsoft Edge, Google Chrome or Brave,
 rem or in the default browser when none of those is installed.
 rem https://github.com/khoks/collage-maker
-setlocal
+setlocal EnableExtensions DisableDelayedExpansion
 set "VERSION=1.0.0"
 
 rem Installed or portable bundle: the HTML sits next to this file. Source checkout: ..\app\index.html.
@@ -26,18 +26,17 @@ if /i "%~1"=="/?" goto :help
 goto :usage_error
 
 :start
+rem A browser chosen with COLLAGE_MAKER_BROWSER: a full path (quotes are fine) or a name such as chrome.
+set "BROWSER="
+set "CHOSEN="
+if defined COLLAGE_MAKER_BROWSER set "CHOSEN=%COLLAGE_MAKER_BROWSER:"=%"
+if defined CHOSEN set "BROWSER=%CHOSEN%"
+if defined BROWSER goto :have_browser
 if "%MODE%"=="browser" goto :default_browser
 
-rem Build a properly escaped file:/// URL (handles spaces, #, %%, and non-ASCII folder names).
-set "URL="
-for /f "usebackq delims=" %%U in (`powershell -NoProfile -NonInteractive -Command "([System.Uri]$env:HTML).AbsoluteUri" 2^>nul`) do set "URL=%%U"
-if not defined URL set "URL=file:///%HTML:\=/%"
-
-rem Find a Chromium-based browser. %URL% is deliberately not used inside this loop: cmd expands it
-rem before substituting the loop variable, which would corrupt escapes such as %%B0 if the loop
-rem variable were a hex letter.
-set "BROWSER="
-if defined COLLAGE_MAKER_BROWSER if exist "%COLLAGE_MAKER_BROWSER%" set "BROWSER=%COLLAGE_MAKER_BROWSER%"
+rem Otherwise find a Chromium-based browser. %URL% is deliberately not used inside this loop: cmd
+rem expands it before substituting the loop variable, which would corrupt escapes such as %%B0 if the
+rem loop variable were a hex letter.
 for %%X in (
   "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
   "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"
@@ -49,14 +48,35 @@ for %%X in (
   "%ProgramFiles(x86)%\BraveSoftware\Brave-Browser\Application\brave.exe"
   "%LocalAppData%\BraveSoftware\Brave-Browser\Application\brave.exe"
 ) do if not defined BROWSER if exist %%X set "BROWSER=%%~X"
-
 if not defined BROWSER goto :default_browser
+
+:have_browser
+rem Only Chromium-based browsers understand --app; anything else gets the file in a normal window.
+set "APPMODE="
+for %%N in ("%BROWSER%") do set "BNAME=%%~nN"
+for %%K in (msedge chrome brave vivaldi opera chromium) do if /i "%BNAME%"=="%%K" set "APPMODE=1"
+if "%MODE%"=="browser" set "APPMODE="
+if not defined APPMODE goto :plain_browser
+
+rem Build a properly escaped file:/// URL (handles spaces, #, %%, and non-ASCII folder names).
+set "URL="
+for /f "usebackq delims=" %%U in (`powershell -NoProfile -NonInteractive -Command "([System.Uri]$env:HTML).AbsoluteUri" 2^>nul`) do set "URL=%%U"
+if not defined URL set "URL=file:///%HTML:\=/%"
 if "%MODE%"=="dry" goto :print_command
-start "" "%BROWSER%" --app="%URL%"
+start "" "%BROWSER%" --app="%URL%" || goto :browser_error
 exit /b 0
 
 :print_command
 echo "%BROWSER%" --app="%URL%"
+exit /b 0
+
+:plain_browser
+if "%MODE%"=="dry" goto :print_plain
+start "" "%BROWSER%" "%HTML%" || goto :browser_error
+exit /b 0
+
+:print_plain
+echo "%BROWSER%" "%HTML%"
 exit /b 0
 
 :default_browser
@@ -68,8 +88,12 @@ exit /b 0
 echo start "" "%HTML%"
 exit /b 0
 
+:browser_error
+echo collage-maker: could not start the browser "%BROWSER%". Check COLLAGE_MAKER_BROWSER. 1>&2
+exit /b 1
+
 :path
-echo %HTML%
+for %%I in ("%HTML%") do echo(%%~I
 exit /b 0
 
 :version
@@ -88,7 +112,8 @@ echo   --dry-run     print the command that would open the app, without running 
 echo   --version     print the version
 echo   --help        show this help
 echo.
-echo Set COLLAGE_MAKER_BROWSER to a browser .exe to choose the browser yourself.
+echo It uses Microsoft Edge, Google Chrome or Brave when installed. To choose another browser,
+echo set COLLAGE_MAKER_BROWSER to its .exe path or name (for example chrome or firefox).
 echo More help: https://github.com/khoks/collage-maker
 exit /b 0
 

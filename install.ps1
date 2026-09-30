@@ -47,11 +47,12 @@ param(
     [string]$ShortcutPath
 )
 
-# Everything lives inside functions so that running this through "irm | iex" never leaves variables
-# or preference changes behind in your PowerShell session, and never closes it.
+# The work happens inside a function so that running this through "irm | iex" never changes your
+# PowerShell session's preferences and never closes it (only the parameter names above are defined).
 
 function Invoke-CollageMakerSetup {
     param($Options)
+    Set-StrictMode -Off
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is very slow with the progress bar on PowerShell 5.1
 
@@ -63,12 +64,21 @@ function Invoke-CollageMakerSetup {
 
     function Write-Step([string]$Text) { Write-Host "  $Text" }
 
+    # Absolute path, relative to PowerShell's current location, without a trailing backslash.
+    function Get-FullPath([string]$Path) {
+        if (-not $Path) { return $Path }
+        $full = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+        if ($full.Length -gt 3) { $full = $full.TrimEnd('\') }
+        return $full
+    }
+
     # Finds Edge, Chrome or Brave: the App Paths registry first, then the usual install folders.
     function Get-Browser {
         foreach ($exe in 'msedge.exe', 'chrome.exe', 'brave.exe') {
             foreach ($hive in 'HKCU:', 'HKLM:') {
-                $key = "$hive\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\$exe"
-                $path = (Get-ItemProperty -Path $key -ErrorAction SilentlyContinue).'(default)'
+                $key = Get-Item -LiteralPath "$hive\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\$exe" -ErrorAction SilentlyContinue
+                $path = $null
+                if ($key) { $path = $key.GetValue('') }
                 if ($path) {
                     $path = $path.Trim('"')
                     if (Test-Path -LiteralPath $path) { return $path }
@@ -117,40 +127,47 @@ function Invoke-CollageMakerSetup {
         return 'unknown'
     }
 
-    # Refuses to delete a folder unless it clearly holds Collage Maker, so a mistyped -InstallDir
-    # can never wipe something else.
+    # Refuses to delete a folder unless everything in it is a file Collage Maker installs, so a
+    # mistyped or shared -InstallDir can never wipe anything else.
+    $OurFiles = @('collage-maker.html', 'collage-maker.cmd', 'collage-maker', 'install.ps1', 'install.sh', 'icons', 'README.md', 'LICENSE')
     function Assert-OurFolder([string]$Dir) {
         if (-not (Test-Path -LiteralPath $Dir)) { return }
-        $items = @(Get-ChildItem -LiteralPath $Dir -Force)
-        if ($items.Count -gt 0 -and -not (Test-Path -LiteralPath (Join-Path $Dir 'collage-maker.html'))) {
-            throw "$Dir already exists and does not look like a Collage Maker install. Choose another -InstallDir."
+        $foreign = @(Get-ChildItem -LiteralPath $Dir -Force | Where-Object { $OurFiles -notcontains $_.Name })
+        if ($foreign.Count -gt 0) {
+            throw "$Dir contains files that are not part of Collage Maker ($($foreign[0].Name), ...). Choose another -InstallDir."
         }
     }
 
     # ------------------------------------------------------------------ shortcut only (Scoop)
     if ($Options.ShortcutFor) {
         if (-not $Options.ShortcutPath) { throw '-ShortcutFor needs -ShortcutPath' }
-        $parent = Split-Path -Parent $Options.ShortcutPath
+        $linkPath = Get-FullPath $Options.ShortcutPath
+        $parent = Split-Path -Parent $linkPath
         if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
-        New-AppShortcut $Options.ShortcutPath $Options.ShortcutFor
+        New-AppShortcut $linkPath (Get-FullPath $Options.ShortcutFor)
         return
     }
 
-    $dir = $Options.InstallDir
+    $dir = Get-FullPath $Options.InstallDir
 
     # ------------------------------------------------------------------ uninstall
     if ($Options.Uninstall) {
+        # Without an explicit -InstallDir, remove the copy recorded in Settings > Apps.
+        if (-not $Options.InstallDirGiven) {
+            $recorded = (Get-ItemProperty -LiteralPath $UninstallKey -ErrorAction SilentlyContinue).InstallLocation
+            if ($recorded) { $dir = Get-FullPath $recorded }
+        }
         Write-Host "Uninstalling $AppName..."
+        Assert-OurFolder $dir
         foreach ($lnk in $StartMenuLink, $DesktopLink) {
             if (Test-Path -LiteralPath $lnk) { Remove-Item -LiteralPath $lnk -Force; Write-Step "Removed $lnk" }
         }
-        if (Test-Path -LiteralPath $UninstallKey) { Remove-Item -LiteralPath $UninstallKey -Recurse -Force; Write-Step 'Removed the Settings > Apps entry' }
         if (Test-Path -LiteralPath $dir) {
-            Assert-OurFolder $dir
             if ((Get-Location).Path -like "$dir*") { Set-Location $env:TEMP }
             Remove-Item -LiteralPath $dir -Recurse -Force
             Write-Step "Removed $dir"
         }
+        if (Test-Path -LiteralPath $UninstallKey) { Remove-Item -LiteralPath $UninstallKey -Recurse -Force; Write-Step 'Removed the Settings > Apps entry' }
         Write-Host "$AppName has been uninstalled."
         return
     }
@@ -162,7 +179,7 @@ function Invoke-CollageMakerSetup {
         $source = $Options.From
         if ($source) {
             $source = (Resolve-Path -LiteralPath $source).Path
-        } elseif ($Options.ScriptRoot -and (Test-Path -LiteralPath (Join-Path $Options.ScriptRoot 'collage-maker.html'))) {
+        } elseif (-not $Options.Version -and $Options.ScriptRoot -and (Test-Path -LiteralPath (Join-Path $Options.ScriptRoot 'collage-maker.html'))) {
             $source = $Options.ScriptRoot   # running from inside an extracted download
         } else {
             [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -192,11 +209,13 @@ function Invoke-CollageMakerSetup {
         # -------------------------------------------------------------- install
         $installed = Get-AppVersion $bundle
         Write-Host "Installing $AppName $installed to $dir"
-        if ((Resolve-Path -LiteralPath $bundle).Path.TrimEnd('\') -ne [IO.Path]::GetFullPath($dir).TrimEnd('\')) {
+        if ((Get-FullPath $bundle) -ne $dir) {
             Assert-OurFolder $dir
             if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
             New-Item -ItemType Directory -Path $dir -Force | Out-Null
-            Copy-Item -Path (Join-Path $bundle '*') -Destination $dir -Recurse -Force
+            # -LiteralPath throughout: folder names may contain [ ] which -Path treats as wildcards.
+            Get-ChildItem -LiteralPath $bundle -Force | Copy-Item -Destination $dir -Recurse -Force
+            if (-not (Test-Path -LiteralPath (Join-Path $dir 'collage-maker.html'))) { throw "Copying the files to $dir failed." }
             # Windows does not need the macOS/Linux files.
             foreach ($extra in 'collage-maker', 'install.sh', 'icons\collage-maker.icns') {
                 $p = Join-Path $dir $extra
@@ -228,8 +247,8 @@ function Invoke-CollageMakerSetup {
         Write-Step 'Registered in Settings > Apps (uninstall it from there)'
 
         Write-Host ''
-        Write-Host "$AppName $installed is installed. Open it from the Start menu, or run:"
-        Write-Host "  `"$dir\collage-maker.cmd`""
+        Write-Host "$AppName $installed is installed. Open it from the Start menu, or run this in PowerShell:"
+        Write-Host "  & `"$dir\collage-maker.cmd`""
         if (-not $Options.NoLaunch -and -not $env:CI) { Start-Process -FilePath $StartMenuLink }
     } finally {
         Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
@@ -243,6 +262,7 @@ Invoke-CollageMakerSetup @{
     DesktopShortcut = [bool]$DesktopShortcut
     NoLaunch        = [bool]$NoLaunch
     InstallDir      = $InstallDir
+    InstallDirGiven = [bool]($PSBoundParameters -and $PSBoundParameters.ContainsKey('InstallDir'))
     ShortcutFor     = $ShortcutFor
     ShortcutPath    = $ShortcutPath
     ScriptRoot      = $PSScriptRoot
