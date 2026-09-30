@@ -6,7 +6,7 @@ class CollageMaker < Formula
   desc "Photo collage maker with white borders and 8K output, fully offline"
   homepage "https://github.com/khoks/collage-maker"
   url "https://github.com/khoks/collage-maker/releases/download/v1.0.0/collage-maker.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "b97d8ee8ca5a39a66e843e30fc17e04aabea4f19fcd45f4300c733a214a604f0"
   license "MIT"
 
   livecheck do

@@ -4,7 +4,7 @@
     "homepage": "https://github.com/khoks/collage-maker",
     "license": "MIT",
     "url": "https://github.com/khoks/collage-maker/releases/download/v1.0.0/collage-maker.zip",
-    "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "hash": "9e288305e593acbddae2f5a227dedc372364fcf0a19da2d132991349596007b0",
     "extract_dir": "collage-maker-1.0.0",
     "bin": "collage-maker.cmd",
     "post_install": [
