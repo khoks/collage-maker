@@ -1,0 +1,24 @@
+{
+  "name": "collage-maker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Drop photos, get a clean 8K collage with white borders. One HTML file, works offline on Windows, macOS and Linux.",
+  "license": "MIT",
+  "homepage": "https://github.com/khoks/collage-maker",
+  "repository": { "type": "git", "url": "git+https://github.com/khoks/collage-maker.git" },
+  "bugs": { "url": "https://github.com/khoks/collage-maker/issues" },
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "playwright test",
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/build.mjs --check",
+    "icons": "node scripts/icons.mjs",
+    "screenshot": "node scripts/screenshot.mjs",
+    "set-version": "node scripts/set-version.mjs",
+    "serve": "node scripts/serve.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

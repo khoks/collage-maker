@@ -1,0 +1,381 @@
+#!/bin/sh
+# Collage Maker launcher for macOS and Linux.
+#
+# Opens the app in its own window using a Chromium-based browser (Chrome, Edge, Brave, Chromium
+# or Vivaldi), or in a normal tab of the default browser when none of those is installed.
+# https://github.com/khoks/collage-maker
+set -eu
+
+VERSION=1.0.0
+REPO_URL=https://github.com/khoks/collage-maker
+APP_NAME='Collage Maker'
+
+die() { printf 'collage-maker: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+  cat <<EOF
+Collage Maker $VERSION: drop photos, get a clean 8K collage with white borders.
+
+Usage: collage-maker [option]
+
+  (no option)           open Collage Maker in its own window
+  --browser             open it in a normal tab of your default browser instead
+  --install-shortcut    add Collage Maker to your applications
+                        (macOS: ~/Applications, Linux: the desktop app menu)
+  --uninstall-shortcut  remove that shortcut again
+  --path                print where the app file is
+  --dry-run             print the command that would open the app, without running it
+  --version             print the version
+  --help                show this help
+
+Set COLLAGE_MAKER_BROWSER to a browser command (Linux) or app name/path (macOS)
+to choose the browser yourself.
+
+More help: $REPO_URL
+EOF
+}
+
+# ------------------------------------------------------------------ locate ourselves and the app
+# Follow symlinks (Homebrew and the .deb put a symlink on your PATH) to find the real script.
+resolve() {
+  target=$1
+  while [ -h "$target" ]; do
+    link=$(readlink "$target")
+    case $link in
+      /*) target=$link ;;
+      *) target=$(dirname "$target")/$link ;;
+    esac
+  done
+  printf '%s/%s\n' "$(cd -P "$(dirname "$target")" && pwd)" "$(basename "$target")"
+}
+
+SELF=$(resolve "$0")
+HERE=$(dirname "$SELF")
+
+# The path this command was started with, made absolute but with symlinks kept, so shortcuts keep
+# working after 'brew upgrade' replaces the versioned directory behind the symlink.
+invoked_path() {
+  case $0 in
+    */*) printf '%s/%s\n' "$(cd "$(dirname "$0")" && pwd)" "$(basename "$0")" ;;
+    *) command -v "$0" 2>/dev/null || printf '%s\n' "$SELF" ;;
+  esac
+}
+
+find_html() {
+  if [ -n "${COLLAGE_MAKER_HTML:-}" ]; then
+    [ -f "$COLLAGE_MAKER_HTML" ] || die "COLLAGE_MAKER_HTML points to a missing file: $COLLAGE_MAKER_HTML"
+    printf '%s\n' "$COLLAGE_MAKER_HTML"
+    return
+  fi
+  # Installed or portable bundle: the HTML sits next to this script. Source checkout: ../app/index.html.
+  for candidate in "$HERE/collage-maker.html" "$HERE/../app/index.html"; do
+    if [ -f "$candidate" ]; then
+      printf '%s/%s\n' "$(cd -P "$(dirname "$candidate")" && pwd)" "$(basename "$candidate")"
+      return
+    fi
+  done
+  die "cannot find collage-maker.html next to $SELF"
+}
+
+find_icon() {  # $1 = svg | icns
+  for candidate in "$HERE/icons/collage-maker.$1" "$HERE/../packaging/icons/collage-maker.$1" "$HERE/../app/icons/icon.$1"; do
+    if [ -f "$candidate" ]; then
+      printf '%s/%s\n' "$(cd -P "$(dirname "$candidate")" && pwd)" "$(basename "$candidate")"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Percent-encodes a path for use in a file:// URL (keeps letters, digits, / . _ ~ -).
+urlencode() {
+  printf '%s' "$1" | LC_ALL=C awk '
+    BEGIN { for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i }
+    {
+      if (NR > 1) printf "%%0A"
+      for (i = 1; i <= length($0); i++) {
+        c = substr($0, i, 1)
+        if (c ~ /[A-Za-z0-9._~\/-]/) printf "%s", c
+        else printf "%%%02X", ord[c]
+      }
+    }'
+}
+
+# ------------------------------------------------------------------ running things
+DRY_RUN=0
+run() {
+  if [ "$DRY_RUN" = 1 ]; then
+    printf '%s' "$1"; shift
+    for arg in "$@"; do printf ' %s' "'$arg'"; done
+    printf '\n'
+  else
+    "$@"
+  fi
+}
+
+# Starts a GUI program without tying it to this terminal.
+launch() {
+  if [ "$DRY_RUN" = 1 ]; then
+    run "$@"
+  else
+    nohup "$@" >/dev/null 2>&1 &
+  fi
+}
+
+# ------------------------------------------------------------------ macOS
+mac_app() {  # prints the .app path of the first installed Chromium-based browser
+  if [ -n "${COLLAGE_MAKER_BROWSER:-}" ]; then
+    case $COLLAGE_MAKER_BROWSER in
+      /*) [ -d "$COLLAGE_MAKER_BROWSER" ] && { printf '%s\n' "$COLLAGE_MAKER_BROWSER"; return 0; } ;;
+    esac
+    set -- "$COLLAGE_MAKER_BROWSER"
+  else
+    set -- 'Google Chrome' 'Microsoft Edge' 'Brave Browser' 'Chromium' 'Vivaldi'
+  fi
+  for name in "$@"; do
+    for dir in /Applications "$HOME/Applications"; do
+      if [ -d "$dir/$name.app" ]; then
+        printf '%s\n' "$dir/$name.app"
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
+MAC_BUNDLE_IDS='com.google.Chrome com.microsoft.edgemac com.brave.Browser org.chromium.Chromium com.vivaldi.Vivaldi'
+
+open_mac() {
+  url="file://$(urlencode "$HTML")"
+  if [ "$USE_APP_WINDOW" = 1 ]; then
+    # -n makes a new launch request, so --app reaches a browser that is already running
+    # (the new process hands the window over to the running one and exits).
+    if app=$(mac_app); then
+      run open -na "$app" --args "--app=$url"
+      return
+    fi
+    # Browsers installed outside /Applications: let Launch Services find them by bundle ID.
+    if [ "$DRY_RUN" != 1 ] && [ -z "${COLLAGE_MAKER_BROWSER:-}" ]; then
+      for id in $MAC_BUNDLE_IDS; do
+        if open -nb "$id" --args "--app=$url" 2>/dev/null; then return; fi
+      done
+    fi
+  fi
+  run open "$HTML"
+}
+
+# ------------------------------------------------------------------ Linux
+# Snap and Flatpak browsers are sandboxed and cannot read files under /usr/share or hidden folders
+# such as ~/.local/share. For them we copy the (single, self-contained) app file somewhere the
+# sandbox can read, and open that copy.
+use_copy_in() {
+  if [ "$DRY_RUN" != 1 ]; then
+    mkdir -p "$1"
+    cp -f "$HTML" "$1/collage-maker.html"
+  fi
+  HTML=$1/collage-maker.html
+}
+
+# Prints the snap name if the command at $1 runs a snap: either a /snap/bin entry (a symlink to
+# /usr/bin/snap) or one of Ubuntu's small wrapper scripts such as /usr/bin/chromium-browser.
+snap_name_of() {
+  real=$(readlink -f "$1" 2>/dev/null || printf '%s' "$1")
+  case $real in
+    /usr/bin/snap|/snap/*) name=${1##*/} ;;
+    *)
+      target=$(head -c 65536 "$1" 2>/dev/null | grep -aoE '/snap/bin/[A-Za-z0-9._-]+' | head -n 1) || true
+      [ -n "$target" ] || return 1
+      name=${target##*/}
+      ;;
+  esac
+  printf '%s\n' "${name%%.*}"
+}
+
+prepare_for_snap() {  # $1 = browser command path
+  if snap=$(snap_name_of "$1"); then
+    use_copy_in "$HOME/snap/$snap/common/collage-maker"
+  fi
+}
+
+FLATPAK_BROWSERS='com.google.Chrome com.microsoft.Edge com.brave.Browser org.chromium.Chromium'
+
+flatpak_browser() {  # prints the app ID of the first installed Chromium-based Flatpak browser
+  [ -z "${COLLAGE_MAKER_BROWSER:-}" ] || return 1
+  command -v flatpak >/dev/null 2>&1 || return 1
+  for id in $FLATPAK_BROWSERS; do
+    if flatpak info "$id" >/dev/null 2>&1; then
+      printf '%s\n' "$id"
+      return 0
+    fi
+  done
+  return 1
+}
+
+linux_browser() {  # prints the path of the first installed Chromium-based browser command
+  if [ -n "${COLLAGE_MAKER_BROWSER:-}" ]; then
+    set -- "$COLLAGE_MAKER_BROWSER"
+  else
+    set -- google-chrome google-chrome-stable microsoft-edge microsoft-edge-stable \
+      brave-browser brave-browser-stable brave chromium chromium-browser vivaldi vivaldi-stable
+  fi
+  for name in "$@"; do
+    if path=$(command -v "$name" 2>/dev/null); then
+      printf '%s\n' "$path"
+      return 0
+    fi
+  done
+  return 1
+}
+
+prepare_for_default_browser() {
+  desktop_id=$(xdg-settings get default-web-browser 2>/dev/null || true)
+  case $desktop_id in
+    *_*.desktop)  # snap desktop files are named <snap>_<app>.desktop
+      snap=${desktop_id%%_*}
+      if [ -e "/snap/bin/$snap" ]; then use_copy_in "$HOME/snap/$snap/common/collage-maker"; fi
+      ;;
+    *.desktop)
+      app_id=${desktop_id%.desktop}
+      if command -v flatpak >/dev/null 2>&1 && flatpak info "$app_id" >/dev/null 2>&1; then
+        use_copy_in "$HOME/.var/app/$app_id/data/collage-maker"
+      fi
+      ;;
+  esac
+}
+
+open_linux() {
+  if [ "$USE_APP_WINDOW" = 1 ]; then
+    if browser=$(linux_browser); then
+      prepare_for_snap "$browser"
+      launch "$browser" "--app=file://$(urlencode "$HTML")"
+      return
+    fi
+    if app_id=$(flatpak_browser); then
+      use_copy_in "$HOME/.var/app/$app_id/data/collage-maker"
+      launch flatpak run "$app_id" "--app=file://$(urlencode "$HTML")"
+      return
+    fi
+  fi
+  prepare_for_default_browser
+  if command -v xdg-open >/dev/null 2>&1; then
+    launch xdg-open "$HTML"
+  elif [ -n "${BROWSER:-}" ]; then
+    launch "$BROWSER" "$HTML"
+  else
+    die "no web browser found. Open this file in any browser: $HTML"
+  fi
+}
+
+# ------------------------------------------------------------------ shortcuts
+desktop_file() {
+  printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/applications/collage-maker.desktop"
+}
+mac_bundle() {
+  printf '%s\n' "$HOME/Applications/$APP_NAME.app"
+}
+
+# Quotes a path for the Exec key of a .desktop file.
+desktop_quote() {
+  printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\\\\\/g' -e 's/"/\\\\"/g' -e 's/`/\\\\`/g' -e 's/\$/\\\\$/g')"
+}
+
+install_shortcut() {
+  exe=$(invoked_path)
+  case $(uname -s) in
+    Darwin)
+      app=$(mac_bundle)
+      rm -rf "$app"
+      mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+      cat >"$app/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>$APP_NAME</string>
+  <key>CFBundleDisplayName</key><string>$APP_NAME</string>
+  <key>CFBundleIdentifier</key><string>io.github.khoks.collage-maker</string>
+  <key>CFBundleVersion</key><string>$VERSION</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleExecutable</key><string>collage-maker</string>
+  <key>CFBundleIconFile</key><string>collage-maker</string>
+  <key>LSMinimumSystemVersion</key><string>10.13</string>
+  <key>LSUIElement</key><true/>
+</dict>
+</plist>
+EOF
+      {
+        printf '#!/bin/sh\n'
+        printf '# Opens Collage Maker. Created by "collage-maker --install-shortcut".\n'
+        printf 'exec %s "$@"\n' "'$(printf '%s' "$exe" | sed "s/'/'\\\\''/g")'"
+      } >"$app/Contents/MacOS/collage-maker"
+      chmod 755 "$app/Contents/MacOS/collage-maker"
+      # cat rather than cp, so a quarantine flag on a browser-downloaded copy is not carried into the app.
+      if icns=$(find_icon icns); then cat "$icns" >"$app/Contents/Resources/collage-maker.icns"; fi
+      touch "$app"
+      lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+      if [ -x "$lsregister" ]; then "$lsregister" -f "$app" >/dev/null 2>&1 || true; fi
+      printf 'Added %s. Find it in Launchpad or Spotlight.\n' "$app"
+      ;;
+    *)
+      file=$(desktop_file)
+      mkdir -p "$(dirname "$file")"
+      icon=collage-maker
+      if svg=$(find_icon svg); then icon=$svg; fi
+      cat >"$file" <<EOF
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=$APP_NAME
+GenericName=Photo Collage
+Comment=Drop photos, get a clean 8K collage with white borders
+Exec=$(desktop_quote "$exe")
+Icon=$icon
+Terminal=false
+Categories=Graphics;Photography;
+Keywords=collage;photo;grid;montage;picture;
+StartupNotify=false
+EOF
+      chmod 644 "$file"
+      if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database "$(dirname "$file")" >/dev/null 2>&1 || true
+      fi
+      printf 'Added %s to your applications menu (%s).\n' "$APP_NAME" "$file"
+      ;;
+  esac
+}
+
+uninstall_shortcut() {
+  case $(uname -s) in
+    Darwin) target=$(mac_bundle) ;;
+    *) target=$(desktop_file) ;;
+  esac
+  if [ -e "$target" ]; then
+    rm -rf "$target"
+    printf 'Removed %s.\n' "$target"
+  else
+    printf 'No shortcut to remove (%s).\n' "$target"
+  fi
+}
+
+# ------------------------------------------------------------------ main
+USE_APP_WINDOW=1
+case ${1:-} in
+  '') ;;
+  --browser) USE_APP_WINDOW=0 ;;
+  --dry-run) DRY_RUN=1 ;;
+  --path) find_html; exit 0 ;;
+  --install-shortcut) install_shortcut; exit 0 ;;
+  --uninstall-shortcut) uninstall_shortcut; exit 0 ;;
+  --version|-v) printf 'collage-maker %s\n' "$VERSION"; exit 0 ;;
+  --help|-h) usage; exit 0 ;;
+  *) usage >&2; exit 2 ;;
+esac
+if [ $# -gt 1 ]; then usage >&2; exit 2; fi
+
+HTML=$(find_html)
+case $(uname -s) in
+  Darwin) open_mac ;;
+  *) open_linux ;;
+esac

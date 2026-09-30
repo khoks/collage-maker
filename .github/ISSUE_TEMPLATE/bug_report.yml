@@ -1,0 +1,44 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run Collage Maker?
+      options:
+        - Web version (khoks.github.io)
+        - Opened collage-maker.html directly
+        - Homebrew
+        - Debian/Ubuntu package
+        - install.sh
+        - install.ps1
+        - Scoop
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system and browser
+      placeholder: e.g. Windows 11 + Edge 152, macOS 26 + Safari, Ubuntu 24.04 + Firefox
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Collage Maker version
+      description: Shown at the bottom-right of the window.
+      placeholder: e.g. 1.0.0
+  - type: textarea
+    id: photos
+    attributes:
+      label: About the photos
+      description: How many, what format (JPG, PNG, HEIC...), roughly what size. Please don't attach private photos.

@@ -1,0 +1,28 @@
+{
+    "version": "1.0.0",
+    "description": "Drop photos, get a clean 8K collage with white borders. Runs offline in your browser.",
+    "homepage": "https://github.com/khoks/collage-maker",
+    "license": "MIT",
+    "url": "https://github.com/khoks/collage-maker/releases/download/v1.0.0/collage-maker.zip",
+    "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "extract_dir": "collage-maker-1.0.0",
+    "bin": "collage-maker.cmd",
+    "post_install": [
+        "$cmFolder = if ($global) { 'CommonPrograms' } else { 'Programs' }",
+        "$cmLink = Join-Path ([Environment]::GetFolderPath($cmFolder)) 'Scoop Apps\Collage Maker.lnk'",
+        "& \"$dir\install.ps1\" -ShortcutFor \"$dir\" -ShortcutPath $cmLink"
+    ],
+    "pre_uninstall": [
+        "$cmFolder = if ($global) { 'CommonPrograms' } else { 'Programs' }",
+        "Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath($cmFolder)) 'Scoop Apps\Collage Maker.lnk') -Force -ErrorAction SilentlyContinue"
+    ],
+    "notes": "Open Collage Maker from the Start menu (Scoop Apps > Collage Maker), or run 'collage-maker'.",
+    "checkver": "github",
+    "autoupdate": {
+        "url": "https://github.com/khoks/collage-maker/releases/download/v$version/collage-maker.zip",
+        "extract_dir": "collage-maker-$version",
+        "hash": {
+            "url": "$baseurl/SHA256SUMS"
+        }
+    }
+}

@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Drop photos, get a clean 8K collage with white borders. Works offline; your photos never leave your device.">
+<meta name="theme-color" content="#2563eb">
+<meta name="color-scheme" content="light">
+<title>Collage Maker</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%233b82f6'/%3E%3Cstop offset='1' stop-color='%231d4ed8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='112' fill='url(%23g)'/%3E%3Crect x='96' y='96' width='320' height='320' rx='28' fill='%23fff'/%3E%3Crect x='116' y='116' width='130' height='130' rx='12' fill='%23f59e0b'/%3E%3Crect x='266' y='116' width='130' height='130' rx='12' fill='%2310b981'/%3E%3Crect x='116' y='266' width='130' height='130' rx='12' fill='%23f43f5e'/%3E%3Crect x='266' y='266' width='130' height='130' rx='12' fill='%238b5cf6'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #d5d8df;
+    --panel: #ffffff;
+    --text: #1f2330;
+    --muted: #6b7280;
+    --border: #d1d5db;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --danger: #b91c1c;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans", sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ---------- toolbar ---------- */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 10px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    flex: 0 0 auto;
+  }
+  header .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; margin-right: 6px; }
+  header .brand svg { width: 22px; height: 22px; flex: none; }
+  button:focus-visible, #empty:focus-visible, input:focus-visible, footer a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .group { display: flex; align-items: center; gap: 8px; }
+  .spacer { flex: 1; }
+  button {
+    font: inherit;
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #f9fafb;
+    color: var(--text);
+    cursor: pointer;
+  }
+  button:hover { background: #eef0f3; }
+  button:active { background: #e3e6ea; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+  label.slider { display: flex; align-items: center; gap: 10px; }
+  input[type=range] { width: 180px; accent-color: var(--accent); }
+  #padVal { min-width: 52px; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 7px 12px; background: #f9fafb; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .seg button.on:hover { background: var(--accent); }
+  .lbl { color: var(--muted); }
+
+  /* ---------- stage ---------- */
+  main {
+    flex: 1 1 auto;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    padding: 20px;
+  }
+  #preview {
+    display: none;
+    background: #fff;
+    box-shadow: 0 6px 24px rgba(0,0,0,.25);
+    cursor: grab;
+    touch-action: none;
+  }
+  #preview.has-photos { display: block; }
+  #preview.dragging { cursor: grabbing; }
+  #empty {
+    border: 3px dashed #9aa0ad;
+    border-radius: 16px;
+    padding: 60px 80px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    max-width: 560px;
+  }
+  #empty.hidden { display: none; }
+  #empty h2 { margin: 0 0 8px; font-size: 22px; font-weight: 600; color: #3f4552; }
+  #empty p { margin: 4px 0; }
+  #empty .icon { width: 64px; height: 64px; margin: 0 auto 12px; display: block; }
+  #empty.loading { border-style: solid; border-color: var(--accent); cursor: progress; }
+  #empty.loading p { visibility: hidden; }
+  #dropOverlay {
+    position: absolute;
+    inset: 12px;
+    border: 4px dashed var(--accent);
+    border-radius: 16px;
+    background: rgba(37,99,235,.08);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--accent);
+    pointer-events: none;
+  }
+  body.dropping #dropOverlay { display: flex; }
+  body.busy, body.busy #preview, body.busy button { cursor: progress; }
+
+  /* ---------- status bar ---------- */
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 16px;
+    padding: 6px 16px;
+    font-size: 13px;
+    color: var(--muted);
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    flex: 0 0 auto;
+  }
+  footer #status.error { color: var(--danger); }
+  footer #status.ok { color: #047857; }
+  footer .right { display: flex; gap: 16px; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="appIconBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <symbol id="appIcon" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="112" fill="url(#appIconBg)"/>
+      <rect x="96" y="96" width="320" height="320" rx="28" fill="#fff"/>
+      <rect x="116" y="116" width="130" height="130" rx="12" fill="#f59e0b"/>
+      <rect x="266" y="116" width="130" height="130" rx="12" fill="#10b981"/>
+      <rect x="116" y="266" width="130" height="130" rx="12" fill="#f43f5e"/>
+      <rect x="266" y="266" width="130" height="130" rx="12" fill="#8b5cf6"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header>
+  <span class="brand"><svg aria-hidden="true"><use href="#appIcon"/></svg>Collage Maker</span>
+  <div class="group">
+    <button id="newBtn" title="Clear the canvas (Ctrl+Z brings the photos back)">New</button>
+    <button id="addBtn" title="Choose photos from disk">Add photos…</button>
+  </div>
+  <label class="slider">
+    <span class="lbl">Padding</span>
+    <input type="range" id="pad" min="0" max="400" step="4" value="80">
+    <span id="padVal">80 px</span>
+  </label>
+  <div class="group">
+    <span class="lbl">Canvas</span>
+    <div class="seg" id="modeSeg">
+      <button data-mode="fit" class="on" title="Cells take the photos' own shape, so nothing is cropped when same-shape photos fill the grid. 7680 px on the long edge.">Fit</button>
+      <button data-mode="landscape" title="7680 × 4320 (photos are centre-cropped to fill)">Landscape</button>
+      <button data-mode="portrait" title="4320 × 7680 (photos are centre-cropped to fill)">Portrait</button>
+      <button data-mode="square" title="7680 × 7680 (photos are centre-cropped to fill)">Square</button>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <button id="saveBtn" class="primary" title="Save as JPG (Ctrl+S)" disabled>Save JPG</button>
+</header>
+
+<main id="stage">
+  <div id="empty" role="button" tabindex="0" aria-describedby="emptyHint">
+    <svg class="icon" aria-hidden="true"><use href="#appIcon"/></svg>
+    <h2 id="emptyTitle">Drop your photos here</h2>
+    <p id="emptyHint">Two or four work best, but any number is fine.</p>
+    <p>You can also click here to browse, or paste an image.</p>
+  </div>
+  <canvas id="preview"></canvas>
+  <div id="dropOverlay">Drop to add photos</div>
+</main>
+
+<footer>
+  <span id="status" role="status" aria-live="polite">Drop photos to start.</span>
+  <span class="right">
+    <span id="hint">Drag a photo onto another to swap · Right-click a photo to remove it · Ctrl+Z undo · Ctrl+S save</span>
+    <a id="about" href="https://github.com/khoks/collage-maker" target="_blank" rel="noopener">Collage Maker</a>
+  </span>
+</footer>
+
+<input type="file" id="fileInput" multiple accept="image/*" hidden>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- constants ----------
+  const VERSION = '1.0.0';
+  const IS_MAC = /mac|iphone|ipad/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
+  const MOD = IS_MAC ? '⌘' : 'Ctrl+';    // how shortcut keys are written in the UI
+  const LONG_EDGE = 7680;
+  const OUT = {
+    landscape: [7680, 4320],
+    portrait:  [4320, 7680],
+    square:    [7680, 7680],
+  };
+  const MODE_LABEL = { fit: 'Fit', landscape: 'Landscape', portrait: 'Portrait', square: 'Square' };
+  const JPEG_QUALITY = 0.92;
+  const PREVIEW_MAX_EDGE = 1600;   // downscaled copy used for the on-screen preview
+  const MIN_CELL = 64;             // never let padding squeeze a cell below this (output px)
+  const DRAG_THRESHOLD = 6;        // css px before a press becomes a drag
+  const REF_PAD = 0;               // padding used when choosing a grid shape, so the slider never flips the layout
+  const BALANCE_WEIGHT = 0.2;      // Fit mode: penalty per unit of |ln(W/H)| so very thin strips lose to grids
+  const MAX_ROWS = 40;             // upper bound on candidate row counts scored per render
+  const MAX_TARGETS = 12;          // Fit mode: at most this many candidate cell shapes
+  const ALT_MARGIN_FIXED = 0.08;   // fixed canvases: an unconventional grid must keep 8% more of the photos than the classic split
+  const ALT_MARGIN_FIT = 0.01;     // Fit: the balance penalty already keeps grids sensible, so a clear win is enough
+  const UNDO_PHOTOS = 16;          // photos kept alive for Ctrl+Z (older removals are forgotten)
+  const UNDO_LIMIT = 20;
+
+  // ---------- DOM ----------
+  const $ = (id) => document.getElementById(id);
+  const stage = $('stage'), canvas = $('preview'), empty = $('empty'), emptyTitle = $('emptyTitle');
+  const padInput = $('pad'), padVal = $('padVal'), modeSeg = $('modeSeg');
+  const newBtn = $('newBtn'), addBtn = $('addBtn'), saveBtn = $('saveBtn');
+  const fileInput = $('fileInput'), statusEl = $('status');
+  const ctx = canvas.getContext('2d');
+  const EMPTY_TITLE = emptyTitle.textContent;
+
+  // Show shortcuts the way this platform writes them (Ctrl+S on Windows/Linux, ⌘S on a Mac).
+  const hintEl = $('hint'), aboutEl = $('about');
+  hintEl.textContent = hintEl.textContent.replace(/Ctrl\+/g, MOD);
+  document.querySelectorAll('[title]').forEach(el => { el.title = el.title.replace(/Ctrl\+/g, MOD); });
+  aboutEl.textContent = `Collage Maker ${VERSION}`;
+  aboutEl.title = 'Source code, updates and help';
+
+  // ---------- state ----------
+  const state = {
+    photos: [],            // { id, name, img, thumb, w, h, url }
+    padding: Number(padInput.value),
+    canvasMode: 'fit',     // 'fit' | 'landscape' | 'portrait' | 'square'
+    drag: null,            // { from, startX, startY, active, over }
+    saving: false,
+  };
+  let nextId = 1;
+  let view = { mode: 'fit', W: 7680, H: 4320, counts: [], rects: [], sx: 1, sy: 1 };
+  let renderQueued = false;
+  const undoStack = [];    // { type: 'remove', photo, index } | { type: 'clear', photos }
+
+  // ---------- layout ----------
+  // A grid is a list of per-row photo counts. Rows share the height; each row splits the width evenly.
+  function evenRows(n, rows) {
+    const base = Math.floor(n / rows), extra = n % rows, counts = [];
+    for (let r = 0; r < rows; r++) counts.push(base + (r < extra ? 1 : 0));
+    return counts;
+  }
+  const colsMajor = (n) => evenRows(n, Math.ceil(n / Math.ceil(Math.sqrt(n))));  // wider grids: 2 -> [2], 3 -> [2,1], 5 -> [3,2]
+  const rowsMajor = (n) => evenRows(n, Math.ceil(Math.sqrt(n)));                 // taller grids: 2 -> [1,1], 5 -> [2,2,1]
+  function uniqSplits(list) {
+    const seen = new Set();
+    return list.filter(c => { const k = c.join(','); if (seen.has(k)) return false; seen.add(k); return true; });
+  }
+
+  function clampPad(pad, W, H, counts) {
+    const rows = counts.length, maxK = Math.max(...counts);
+    return Math.max(0, Math.min(pad,
+      Math.floor((H - rows * MIN_CELL) / (rows + 1)),
+      Math.floor((W - maxK * MIN_CELL) / (maxK + 1))));
+  }
+
+  // Integer-snapped cell rectangles for a grid on a W x H canvas with uniform padding.
+  function layoutRects(counts, W, H, pad) {
+    pad = clampPad(pad, W, H, counts);
+    const rows = counts.length;
+    const rowH = (H - pad * (rows + 1)) / rows;
+    const rects = [];
+    for (let r = 0; r < rows; r++) {
+      const y0 = Math.round(pad + r * (rowH + pad));
+      const y1 = Math.round(pad + r * (rowH + pad) + rowH);
+      const k = counts[r], cellW = (W - pad * (k + 1)) / k;
+      for (let i = 0; i < k; i++) {
+        const x0 = Math.round(pad + i * (cellW + pad));
+        const x1 = Math.round(pad + i * (cellW + pad) + cellW);
+        rects.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+      }
+    }
+    return rects;
+  }
+
+  // Fit mode canvas: long edge LONG_EDGE; cells in the fullest rows get exactly `aspect`.
+  function fitCanvas(counts, aspect, pad) {
+    const rows = counts.length, maxK = Math.max(...counts);
+    pad = clampPad(pad, LONG_EDGE, LONG_EDGE, counts);
+    let W = LONG_EDGE;
+    const cellW = (W - pad * (maxK + 1)) / maxK;
+    let H = Math.round(rows * (cellW / aspect) + pad * (rows + 1));
+    if (H > LONG_EDGE) {
+      H = LONG_EDGE;
+      const cellH = (H - pad * (rows + 1)) / rows;
+      W = Math.round(maxK * cellH * aspect + pad * (maxK + 1));
+    }
+    return [Math.max(W, MIN_CELL), Math.max(H, MIN_CELL)];
+  }
+
+  // Fraction of each photo's area that survives a centre crop into its cell, averaged.
+  function retention(aspects, rects) {
+    let s = 0;
+    for (let i = 0; i < aspects.length; i++) {
+      const ca = rects[i].w / rects[i].h, ia = aspects[i];
+      s += ia > ca ? ca / ia : ia / ca;
+    }
+    return s / aspects.length;
+  }
+
+  // Decide canvas size and grid for the current photos in a given mode.
+  function plan(mode, pad) {
+    const n = state.photos.length;
+    if (!n) return { mode, W: OUT.landscape[0], H: OUT.landscape[1], counts: [], rects: [] };
+    const aspects = state.photos.map(p => p.w / p.h);
+    // Candidate grids: the natural split first (it wins ties), then every row count from 1 to n.
+    const natural = mode === 'portrait' ? [rowsMajor(n), colsMajor(n)] : [colsMajor(n), rowsMajor(n)];
+    const naturalKeys = new Set(natural.map(c => c.join(',')));
+    const others = [];
+    for (let r = 1; r <= Math.min(n, MAX_ROWS); r++) others.push(evenRows(n, r));
+    const candidates = uniqSplits([...natural, ...others]);
+    // Fit mode sizes the canvas for a target cell shape. Try the geometric mean, the median and
+    // each distinct photo shape, so one panorama cannot drag every cell towards itself.
+    let targets = [null];
+    if (mode === 'fit') {
+      const logs = aspects.map(Math.log).sort((a, b) => a - b), m = n >> 1;
+      const mean = Math.exp(logs.reduce((s, v) => s + v, 0) / n);
+      const median = Math.exp(n % 2 ? logs[m] : (logs[m - 1] + logs[m]) / 2);
+      targets = [...new Set([mean, median, ...aspects].map(a => Math.round(a * 1000) / 1000))].slice(0, MAX_TARGETS);
+    }
+    const sizeFor = (counts, target, p) => target ? fitCanvas(counts, target, p) : OUT[mode];
+    // Choose the grid at a fixed reference padding so the slider never changes the shape.
+    // The natural split is scored first and an unconventional grid must beat it clearly.
+    let best = null;
+    for (const counts of candidates) {
+      const margin = naturalKeys.has(counts.join(',')) ? 1e-3 : (mode === 'fit' ? ALT_MARGIN_FIT : ALT_MARGIN_FIXED);
+      for (const target of targets) {
+        const [W, H] = sizeFor(counts, target, REF_PAD);
+        let score = retention(aspects, layoutRects(counts, W, H, REF_PAD));
+        if (mode === 'fit') score -= BALANCE_WEIGHT * Math.abs(Math.log(W / H));
+        if (!best || score > best.score + margin) best = { counts, target, score };
+      }
+    }
+    const [W, H] = sizeFor(best.counts, best.target, pad);
+    return { mode, W, H, counts: best.counts, rects: layoutRects(best.counts, W, H, pad) };
+  }
+
+  // ---------- drawing ----------
+  function drawCover(c, src, sw, sh, r) {
+    const ia = sw / sh, ca = r.w / r.h;
+    let sx = 0, sy = 0, cw = sw, ch = sh;
+    if (ia > ca) { cw = sh * ca; sx = (sw - cw) / 2; }
+    else         { ch = sw / ca; sy = (sh - ch) / 2; }
+    c.drawImage(src, sx, sy, cw, ch, r.x, r.y, r.w, r.h);
+  }
+
+  // Draws the collage in output coordinates (0..W, 0..H) on any context.
+  function drawCollage(c, W, H, rects, fullRes) {
+    c.fillStyle = '#ffffff';
+    c.fillRect(0, 0, W, H);
+    c.imageSmoothingEnabled = true;
+    c.imageSmoothingQuality = 'high';
+    state.photos.forEach((p, i) => {
+      const src = fullRes ? p.img : p.thumb;
+      const sw = fullRes ? p.w : (src.width || p.w);
+      const sh = fullRes ? p.h : (src.height || p.h);
+      drawCover(c, src, sw, sh, rects[i]);
+    });
+  }
+
+  function fitPreview() {
+    const pl = plan(state.canvasMode, state.padding);
+    const availW = Math.max(50, stage.clientWidth - 40);
+    const availH = Math.max(50, stage.clientHeight - 40);
+    const dpr = window.devicePixelRatio || 1;
+    const s = Math.min(availW / pl.W, availH / pl.H) * dpr;          // device px per output px
+    const pw = Math.max(1, Math.round(pl.W * s)), ph = Math.max(1, Math.round(pl.H * s));
+    if (canvas.width !== pw) canvas.width = pw;
+    if (canvas.height !== ph) canvas.height = ph;
+    canvas.style.width = (pw / dpr) + 'px';
+    canvas.style.height = (ph / dpr) + 'px';
+    view = { ...pl, sx: pw / pl.W, sy: ph / pl.H };
+  }
+
+  function render() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => { renderQueued = false; paint(); });
+  }
+
+  function paint() {
+    const has = state.photos.length > 0;
+    canvas.classList.toggle('has-photos', has);
+    empty.classList.toggle('hidden', has);
+    saveBtn.disabled = !has || state.saving || loadsInFlight > 0;
+    if (!has) { updateStatusIdle(); return; }
+
+    fitPreview();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(view.sx, 0, 0, view.sy, 0, 0);
+    drawCollage(ctx, view.W, view.H, view.rects, false);
+
+    // Drag feedback: dim the source cell, outline the target.
+    const d = state.drag;
+    if (d && d.active && view.rects[d.from]) {
+      const src = view.rects[d.from];
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      ctx.fillRect(src.x, src.y, src.w, src.h);
+      if (d.over >= 0 && d.over !== d.from && view.rects[d.over]) {
+        const t = view.rects[d.over];
+        const lw = 10 / view.sx;
+        ctx.lineWidth = lw;
+        ctx.strokeStyle = '#2563eb';
+        ctx.strokeRect(t.x + lw / 2, t.y + lw / 2, t.w - lw, t.h - lw);
+      }
+    }
+    updateStatusIdle();
+  }
+
+  // ---------- status ----------
+  let statusTimer = null;
+  function setStatus(msg, kind) {
+    clearTimeout(statusTimer);
+    statusEl.textContent = msg;
+    statusEl.className = kind || '';
+    if (kind === 'ok' || kind === 'error') {
+      statusTimer = setTimeout(clearStatus, kind === 'ok' ? 6000 : 12000);
+    }
+  }
+  function clearStatus() {
+    clearTimeout(statusTimer);
+    statusEl.className = '';
+    updateStatusIdle();
+  }
+  function updateStatusIdle() {
+    if (statusEl.className === 'ok' || statusEl.className === 'error' || statusEl.className === 'busy') return;
+    const n = state.photos.length;
+    if (!n) { statusEl.textContent = 'Drop photos to start.'; return; }
+    // Before the next paint the view can be stale, so fall back to a fresh plan.
+    const pl = (view.mode === state.canvasMode && view.rects.length === n) ? view : plan(state.canvasMode, state.padding);
+    const keep = retention(state.photos.map(p => p.w / p.h), pl.rects);
+    const crop = keep > 0.995 ? 'nothing cropped' : `${Math.round((1 - keep) * 100)}% cropped`;
+    statusEl.textContent =
+      `${n} photo${n === 1 ? '' : 's'} · ${MODE_LABEL[pl.mode]} ${pl.W} × ${pl.H} · padding ${state.padding} px · ${crop}`;
+  }
+
+  // ---------- loading ----------
+  const IMAGE_EXT = /\.(jpe?g|png|gif|webp|bmp|avif|jfif|svg)$/i;
+  const HEIC_EXT = /\.(heic|heif|hif)$/i;
+
+  function looksLikeImage(f) {
+    return (f.type && f.type.startsWith('image/')) || IMAGE_EXT.test(f.name || '');
+  }
+
+  function makeThumb(img) {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    const s = Math.min(1, PREVIEW_MAX_EDGE / Math.max(w, h));
+    if (s >= 1) return img;
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * s));
+    c.height = Math.max(1, Math.round(h * s));
+    const cc = c.getContext('2d');
+    cc.imageSmoothingQuality = 'high';
+    cc.drawImage(img, 0, 0, c.width, c.height);
+    return c;
+  }
+
+  function loadPhoto(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = async () => {
+        try { await img.decode(); } catch (_) { /* some browsers throw for huge images; drawImage still works */ }
+        if (!img.naturalWidth || !img.naturalHeight) {
+          URL.revokeObjectURL(url);
+          reject(new Error('empty image'));
+          return;
+        }
+        resolve({ id: nextId++, name: file.name, img, thumb: makeThumb(img),
+                  w: img.naturalWidth, h: img.naturalHeight, url });
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('not a supported image')); };
+      img.src = url;
+    });
+  }
+
+  let loadGen = 0;          // bumped by New so photos still decoding are discarded, not added
+  let loadsInFlight = 0;
+  let loadChain = Promise.resolve();
+
+  // Drops are processed one batch at a time so photos always land in drop order.
+  function addFiles(fileList) {
+    const files = Array.from(fileList || []).filter(Boolean);
+    const gen = loadGen;                       // captured now, so a New pressed before decoding ends discards this batch
+    const p = loadChain.then(() => addBatch(files, gen));
+    loadChain = p.catch(() => {});
+    return p;
+  }
+
+  async function addBatch(all, gen) {
+    if (!all.length || gen !== loadGen) return;
+    const files = all.filter(looksLikeImage);
+    const skipped = all.filter(f => !looksLikeImage(f)).map(f => f.name);
+    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+    loadsInFlight++;
+    saveBtn.disabled = true;
+    document.body.classList.add('busy');
+    empty.classList.add('loading');
+    emptyTitle.textContent = `Loading ${files.length} photo${files.length === 1 ? '' : 's'}…`;
+    setStatus(emptyTitle.textContent, 'busy');
+    let results = [];
+    try {
+      results = await Promise.allSettled(files.map(loadPhoto));
+    } finally {
+      if (--loadsInFlight === 0) {
+        document.body.classList.remove('busy');
+        empty.classList.remove('loading');
+        emptyTitle.textContent = EMPTY_TITLE;
+        render();   // re-enables Save
+      }
+    }
+    if (gen !== loadGen) {
+      // New was pressed while these were decoding: throw them away.
+      results.forEach(r => { if (r.status === 'fulfilled') URL.revokeObjectURL(r.value.url); });
+      return;
+    }
+    const failed = [];
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') state.photos.push(r.value);
+      else failed.push(files[i].name);
+    });
+    const problems = [...skipped, ...failed];
+    if (problems.length) {
+      const heic = problems.filter(n => HEIC_EXT.test(n));
+      const msg = heic.length
+        ? `${heic.length === problems.length ? 'These are' : 'Some of these are'} HEIC photos, which this browser cannot open. Convert them to JPG first (the Photos app on Windows or Mac can), or use Safari: ${problems.join(', ')}`
+        : `Skipped ${problems.length} file${problems.length === 1 ? '' : 's'} that could not be read as an image: ${problems.join(', ')}`;
+      setStatus(msg, 'error');
+    } else {
+      clearStatus();
+    }
+    render();
+  }
+
+  function forget(entry) {
+    (entry.photos || [entry.photo]).forEach(p => { URL.revokeObjectURL(p.url); p.img = null; p.thumb = null; });
+  }
+
+  function pushUndo(entry) {
+    // Only the most recent New is undoable; older cleared sets are released.
+    if (entry.type === 'clear') {
+      for (let i = undoStack.length - 1; i >= 0; i--) {
+        if (undoStack[i].type === 'clear') forget(undoStack.splice(i, 1)[0]);
+      }
+    }
+    undoStack.push(entry);
+    const count = (e) => e.photos ? e.photos.length : 1;
+    let total = undoStack.reduce((s, e) => s + count(e), 0);
+    while (undoStack.length > 1 && (undoStack.length > UNDO_LIMIT || total > UNDO_PHOTOS)) {
+      const old = undoStack.shift();
+      total -= count(old);
+      forget(old);
+    }
+  }
+
+  function removePhoto(index) {
+    if (state.drag) endDrag(null, false);
+    const [p] = state.photos.splice(index, 1);
+    if (!p) return;
+    pushUndo({ type: 'remove', photo: p, index });
+    setStatus(`Removed ${p.name} (${MOD}Z to undo)`, 'ok');
+    render();
+  }
+
+  function clearAll() {
+    loadGen++;
+    if (state.photos.length) {
+      pushUndo({ type: 'clear', photos: state.photos });
+      setStatus(`Canvas cleared (${MOD}Z brings the photos back)`, 'ok');
+    } else {
+      clearStatus();
+    }
+    state.photos = [];
+    state.drag = null;
+    render();
+  }
+
+  function undo() {
+    const e = undoStack.pop();
+    if (!e) return;
+    if (state.drag) endDrag(null, false);   // indices are about to shift
+    if (e.type === 'remove') {
+      state.photos.splice(Math.min(e.index, state.photos.length), 0, e.photo);
+      setStatus(`Restored ${e.photo.name}`, 'ok');
+    } else {
+      state.photos = [...e.photos, ...state.photos];
+      setStatus(`Restored ${e.photos.length} photo${e.photos.length === 1 ? '' : 's'}`, 'ok');
+    }
+    render();
+  }
+
+  // ---------- saving ----------
+  function stamp() {
+    const d = new Date(), z = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
+  }
+
+  function nextFrame() { return new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))); }
+
+  function renderFull() {
+    const pl = plan(state.canvasMode, state.padding);
+    const c = document.createElement('canvas');
+    c.width = pl.W; c.height = pl.H;
+    const cc = c.getContext('2d');
+    if (!cc) throw new Error('Could not create an 8K canvas');
+    drawCollage(cc, pl.W, pl.H, pl.rects, true);
+    return new Promise((resolve, reject) => {
+      c.toBlob(b => b ? resolve({ blob: b, W: pl.W, H: pl.H }) : reject(new Error('JPEG encoding failed')), 'image/jpeg', JPEG_QUALITY);
+    });
+  }
+
+  async function save() {
+    if (state.saving) return;
+    if (!state.photos.length) { setStatus('Add some photos first.', 'error'); return; }
+    if (loadsInFlight > 0) { setStatus('Photos are still loading; save once they appear.', 'error'); return; }
+    state.saving = true;
+    saveBtn.disabled = true;
+    const name = `collage-${stamp()}.jpg`;
+    let handle = null, written = false;
+    try {
+      if (window.showSaveFilePicker) {
+        // Ask for the destination first, while the click is still a fresh user gesture.
+        try {
+          handle = await window.showSaveFilePicker({
+            suggestedName: name,
+            types: [{ description: 'JPEG image', accept: { 'image/jpeg': ['.jpg', '.jpeg'] } }],
+          });
+        } catch (e) {
+          if (e && e.name === 'AbortError') { setStatus('Save cancelled.', 'ok'); return; }
+          handle = null;   // dialog blocked (e.g. "file editing" disabled in the browser): fall back to a download
+        }
+      }
+      setStatus('Rendering the collage…', 'busy');
+      await nextFrame();
+      const { blob, W, H } = await renderFull();
+      const size = `${W} × ${H}, ${(blob.size / 1048576).toFixed(1)} MB`;
+      if (handle) {
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        written = true;
+        setStatus(`Saved ${handle.name} (${size})`, 'ok');
+      } else {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+        setStatus(`Downloaded ${name} (${size}). Look in your Downloads folder.`, 'ok');
+      }
+    } catch (e) {
+      let msg = 'Save failed: ' + (e && e.message ? e.message : e);
+      if (handle && !written) {
+        // The dialog already created (or emptied) the chosen file; try not to leave a 0-byte JPG behind.
+        let removed = false;
+        try { if (typeof handle.remove === 'function') { await handle.remove(); removed = true; } } catch (_) { /* leave it */ }
+        msg += removed ? ' — nothing was written; the empty file was removed.' : ` — nothing was written; ${handle.name} is empty.`;
+      }
+      setStatus(msg, 'error');
+    } finally {
+      state.saving = false;
+      saveBtn.disabled = !state.photos.length;
+    }
+  }
+
+  // ---------- pointer interaction on the preview ----------
+  function cellAt(ev) {
+    const r = canvas.getBoundingClientRect();
+    const x = (ev.clientX - r.left) * (view.W / r.width);
+    const y = (ev.clientY - r.top) * (view.H / r.height);
+    return view.rects.findIndex(c => x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h);
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const i = cellAt(e);
+    if (i < 0) return;
+    state.drag = { from: i, startX: e.clientX, startY: e.clientY, active: false, over: i };
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* synthetic events have no active pointer */ }
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    const d = state.drag;
+    if (!d) return;
+    if (!d.active) {
+      if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < DRAG_THRESHOLD) return;
+      d.active = true;
+      canvas.classList.add('dragging');
+    }
+    const over = cellAt(e);
+    if (over !== d.over) { d.over = over; render(); }
+  });
+
+  function endDrag(e, commit) {
+    const d = state.drag;
+    if (!d) return;
+    state.drag = null;
+    canvas.classList.remove('dragging');
+    if (e && e.pointerId !== undefined && canvas.hasPointerCapture(e.pointerId)) {
+      canvas.releasePointerCapture(e.pointerId);
+    }
+    if (commit && d.active && d.over >= 0 && d.over !== d.from && d.from < state.photos.length && d.over < state.photos.length) {
+      const p = state.photos;
+      [p[d.from], p[d.over]] = [p[d.over], p[d.from]];
+    }
+    render();
+  }
+  canvas.addEventListener('pointerup', (e) => endDrag(e, true));
+  canvas.addEventListener('pointercancel', (e) => endDrag(e, false));
+  canvas.addEventListener('lostpointercapture', () => { if (state.drag) endDrag(null, false); });
+
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (state.drag) { endDrag(e, false); return; }
+    const i = cellAt(e);
+    if (i >= 0) removePhoto(i);
+  });
+
+  // ---------- file drag & drop (whole window) ----------
+  // Every drag is cancelled so that dropping a link or text never navigates the app away;
+  // only real files are added.
+  let dragDepth = 0;
+  function hasFiles(e) {
+    const t = e.dataTransfer;
+    return !!t && Array.from(t.types || []).includes('Files');
+  }
+  window.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    if (!hasFiles(e)) return;
+    dragDepth++;
+    document.body.classList.add('dropping');
+  });
+  window.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = hasFiles(e) ? 'copy' : 'none';
+  });
+  window.addEventListener('dragleave', (e) => {
+    if (!hasFiles(e)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) document.body.classList.remove('dropping');
+  });
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    document.body.classList.remove('dropping');
+    if (hasFiles(e)) addFiles(e.dataTransfer.files);
+  });
+
+  // Paste an image (or copied files) from the clipboard.
+  window.addEventListener('paste', (e) => {
+    const cd = e.clipboardData;
+    if (!cd) return;
+    const files = [];
+    for (const item of cd.items || []) {
+      if (item.kind === 'file') {
+        const f = item.getAsFile();
+        if (f) files.push(f.name ? f : new File([f], `pasted-${stamp()}.png`, { type: f.type }));
+      }
+    }
+    if (files.length) { e.preventDefault(); addFiles(files); }
+  });
+
+  // ---------- controls ----------
+  padInput.addEventListener('input', () => {
+    state.padding = Number(padInput.value);
+    padVal.textContent = `${state.padding} px`;
+    if (statusEl.className === 'error') clearStatus();
+    render();
+  });
+
+  function setMode(mode) {
+    if (!MODE_LABEL[mode]) return;
+    state.canvasMode = mode;
+    modeSeg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.mode === mode));
+    if (statusEl.className === 'error') clearStatus();
+    render();
+  }
+  modeSeg.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-mode]');
+    if (b) setMode(b.dataset.mode);
+  });
+
+  newBtn.addEventListener('click', clearAll);
+  addBtn.addEventListener('click', () => fileInput.click());
+  empty.addEventListener('click', () => { if (!empty.classList.contains('loading')) fileInput.click(); });
+  empty.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && !empty.classList.contains('loading')) { e.preventDefault(); fileInput.click(); }
+  });
+  fileInput.addEventListener('change', () => { addFiles(fileInput.files); fileInput.value = ''; });
+  saveBtn.addEventListener('click', save);
+
+  window.addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); save(); }
+    else if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); }
+    else if (e.key === 'Escape' && state.drag) endDrag(null, false);
+  });
+
+  new ResizeObserver(() => render()).observe(stage);
+  window.addEventListener('resize', render);
+
+  // When served from a web server (e.g. the hosted copy), make the page installable and usable offline.
+  // Opened as a local file, none of this runs, so the single HTML file keeps working on its own.
+  if (/^https?:$/.test(location.protocol)) {
+    const manifest = document.createElement('link');
+    manifest.rel = 'manifest';
+    manifest.href = 'manifest.webmanifest';
+    document.head.appendChild(manifest);
+    const touchIcon = document.createElement('link');
+    touchIcon.rel = 'apple-touch-icon';
+    touchIcon.href = 'icons/apple-touch-icon.png';
+    document.head.appendChild(touchIcon);
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+
+  // Exposed for automated testing only.
+  window.__collage = { VERSION, state, addFiles, clearAll, removePhoto, undo, save, setMode, plan, layoutRects, colsMajor, rowsMajor, fitCanvas, view: () => view, render: paint };
+
+  render();
+})();
+</script>
+</body>
+</html>

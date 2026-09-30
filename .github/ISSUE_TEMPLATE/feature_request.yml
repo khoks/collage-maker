@@ -1,0 +1,18 @@
+name: Feature request
+description: Suggest an idea
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Collage Maker aims to stay simple ("nothing fancy"). Ideas that keep it easy to use are the most likely to land.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: Describe the problem or the collage you're trying to make.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could Collage Maker help?

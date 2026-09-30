@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Collage Maker
+GenericName=Photo Collage
+Comment=Drop photos, get a clean 8K collage with white borders
+Exec=collage-maker
+Icon=collage-maker
+Terminal=false
+Categories=Graphics;Photography;
+Keywords=collage;photo;grid;montage;picture;
+StartupNotify=false

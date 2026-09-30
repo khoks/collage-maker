@@ -1,0 +1,211 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: 1
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_INSTALL_CLEANUP: 1
+  HOMEBREW_NO_ENV_HINTS: 1
+
+jobs:
+  # ---------------------------------------------------------------------------------------------
+  # The app itself, in Chromium, Firefox and WebKit (Safari's engine) on all three systems.
+  app:
+    name: App tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            browsers: chromium firefox webkit
+          - os: macos-latest
+            browsers: chromium webkit
+          - os: windows-latest
+            browsers: chromium firefox
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps ${{ matrix.browsers }}
+        shell: bash
+      - name: Run tests
+        shell: bash
+        run: npx playwright test $(printf -- '--project=%s ' ${{ matrix.browsers }})
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: test-results-${{ matrix.os }}
+          path: test-results
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------------------------
+  # Linux: build, lint the shell scripts, and install the .deb, install.sh and Homebrew for real.
+  linux:
+    name: Packages (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Versions agree
+        run: node scripts/build.mjs --check
+      - name: Build
+        run: node scripts/build.mjs
+      - name: ShellCheck
+        run: shellcheck bin/collage-maker install.sh
+
+      - name: Launcher works in dash, bash and busybox sh
+        run: |
+          sudo apt-get install -y busybox
+          for sh in dash bash "busybox sh"; do
+            echo "== $sh"
+            $sh bin/collage-maker --version
+            test "$($sh bin/collage-maker --path)" = "$PWD/app/index.html"
+            COLLAGE_MAKER_BROWSER=/bin/true $sh bin/collage-maker --dry-run
+          done
+
+      - name: Launcher percent-encodes unusual folder names
+        run: |
+          dir="$RUNNER_TEMP/dir with spaces #1 ü%"
+          mkdir -p "$dir"
+          tar -xzf dist/collage-maker.tar.gz -C "$dir"
+          app=$(echo "$dir"/collage-maker-*)
+          got=$(COLLAGE_MAKER_BROWSER=/bin/true "$app/collage-maker" --dry-run)
+          want=$(python3 -c 'import sys, urllib.parse; print("file://" + urllib.parse.quote(sys.argv[1], safe="/~._-"))' "$app/collage-maker.html")
+          echo "got:  $got"
+          echo "want: $want"
+          test "$got" = "/bin/true '--app=$want'"
+
+      - name: Launcher stages a copy for snap browsers
+        run: |
+          fake="$RUNNER_TEMP/fake-bin"
+          mkdir -p "$fake"
+          printf '#!/bin/sh\nexec /snap/bin/chromium "$@"\n' > "$fake/chromium-browser"
+          chmod +x "$fake/chromium-browser"
+          out=$(PATH="$fake:$PATH" COLLAGE_MAKER_BROWSER=chromium-browser bin/collage-maker --dry-run)
+          echo "$out"
+          echo "$out" | grep -F "file://$HOME/snap/chromium/common/collage-maker/collage-maker.html"
+
+      - name: Debian package
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lintian desktop-file-utils
+          dpkg-deb --info dist/collage-maker.deb
+          dpkg-deb --contents dist/collage-maker.deb
+          lintian --fail-on error --suppress-tags no-manual-page --info dist/collage-maker.deb
+          sudo apt-get install -y ./dist/collage-maker.deb
+          collage-maker --version
+          test "$(collage-maker --path)" = /usr/share/collage-maker/collage-maker.html
+          collage-maker --dry-run
+          desktop-file-validate /usr/share/applications/collage-maker.desktop
+          sudo apt-get remove -y collage-maker
+          ! command -v collage-maker
+
+      - name: install.sh (install, shortcut, uninstall)
+        run: |
+          sh install.sh --from dist/collage-maker.tar.gz
+          ~/.local/bin/collage-maker --version
+          test "$(~/.local/bin/collage-maker --path)" = "$HOME/.local/share/collage-maker/collage-maker.html"
+          desktop-file-validate ~/.local/share/applications/collage-maker.desktop
+          grep -F "Icon=$HOME/.local/share/collage-maker/icons/collage-maker.svg" ~/.local/share/applications/collage-maker.desktop
+          ~/.local/bin/collage-maker --dry-run
+          sh ~/.local/share/collage-maker/install.sh --uninstall
+          test ! -e ~/.local/bin/collage-maker
+          test ! -e ~/.local/share/collage-maker
+          test ! -e ~/.local/share/applications/collage-maker.desktop
+
+      - name: Homebrew on Linux (formula against this build)
+        run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          scripts/ci-brew-local.sh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------------------------
+  # macOS: launcher, install.sh with the Launchpad app, and the Homebrew formula.
+  macos:
+    name: Packages (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node scripts/build.mjs
+      - name: Launcher
+        run: |
+          bin/collage-maker --version
+          test "$(bin/collage-maker --path)" = "$PWD/app/index.html"
+          out=$(bin/collage-maker --dry-run)
+          echo "$out"
+          echo "$out" | grep -E "^open -na '/(Users/[^/]+/)?Applications/[^']+\.app' --args '--app=file://"
+      - name: install.sh (install, Launchpad app, uninstall)
+        run: |
+          sh install.sh --from dist/collage-maker.tar.gz
+          app="$HOME/Applications/Collage Maker.app"
+          plutil -lint "$app/Contents/Info.plist"
+          test -x "$app/Contents/MacOS/collage-maker"
+          test -s "$app/Contents/Resources/collage-maker.icns"
+          "$app/Contents/MacOS/collage-maker" --version
+          test "$(~/.local/bin/collage-maker --path)" = "$HOME/.local/share/collage-maker/collage-maker.html"
+          sh ~/.local/share/collage-maker/install.sh --uninstall
+          test ! -e "$app"
+          test ! -e ~/.local/share/collage-maker
+      - name: Homebrew (formula against this build)
+        run: |
+          scripts/ci-brew-local.sh
+          brew style Formula/collage-maker.rb
+
+  # ---------------------------------------------------------------------------------------------
+  # Windows: the .cmd launcher and install.ps1 in both Windows PowerShell 5.1 and PowerShell 7.
+  windows:
+    name: Packages (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node scripts/build.mjs
+      - name: Launcher
+        shell: cmd
+        run: |
+          call bin\collage-maker.cmd --version || exit /b 1
+          call bin\collage-maker.cmd --path || exit /b 1
+          call bin\collage-maker.cmd --dry-run || exit /b 1
+      - name: Launcher from a folder with spaces, brackets, # and non-ASCII characters
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'dir (x86) #1 ü'
+          Expand-Archive dist\collage-maker.zip -DestinationPath $dir
+          $cmd = Get-ChildItem $dir -Recurse -Filter collage-maker.cmd | Select-Object -First 1
+          $out = & cmd.exe /d /c "`"$($cmd.FullName)`" --dry-run"
+          $out
+          if ($out -notmatch '--app="file:///.+/dir%20\(x86\)%20%231%20%C3%BC/collage-maker-[\d.]+/collage-maker\.html"') { throw 'URL is not encoded as expected' }
+      - name: install.ps1 in Windows PowerShell 5.1
+        shell: powershell
+        run: scripts\ci-install-ps1.ps1 -Zip dist\collage-maker.zip
+      - name: install.ps1 in PowerShell 7, run the way "irm | iex" runs it
+        shell: pwsh
+        run: scripts\ci-install-ps1.ps1 -Zip dist\collage-maker.zip -AsScriptBlock
