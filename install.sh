@@ -136,7 +136,9 @@ if [ -z "$FROM" ]; then
   fetch "$base/SHA256SUMS" "$TMP/SHA256SUMS"
   expected=$(grep ' \*\{0,1\}collage-maker\.tar\.gz$' "$TMP/SHA256SUMS" | cut -d ' ' -f 1 || true)
   actual=$(sha256_of "$TMP/collage-maker.tar.gz")
-  [ -n "$expected" ] && [ "$expected" = "$actual" ] || die "the download is corrupt (SHA-256 mismatch); please try again"
+  if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+    die "the download is corrupt (SHA-256 mismatch); please try again"
+  fi
   say "  checksum verified"
   FROM=$TMP/collage-maker.tar.gz
 fi
@@ -151,7 +153,9 @@ else
   [ -n "$SRC" ] || die "no collage-maker.html inside $FROM"
   SRC=$(dirname "$SRC")
 fi
-[ -f "$SRC/collage-maker.html" ] && [ -f "$SRC/collage-maker" ] || die "$SRC is not a Collage Maker download"
+if [ ! -f "$SRC/collage-maker.html" ] || [ ! -f "$SRC/collage-maker" ]; then
+  die "$SRC is not a Collage Maker download"
+fi
 SRC=$(cd "$SRC" && pwd)
 
 # ------------------------------------------------------------------ install

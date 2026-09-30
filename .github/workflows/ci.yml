@@ -91,7 +91,7 @@ jobs:
           want=$(python3 -c 'import sys, urllib.parse; print("file://" + urllib.parse.quote(sys.argv[1], safe="/~._-"))' "$app/collage-maker.html")
           echo "got:  $got"
           echo "want: $want"
-          test "$got" = "/bin/true '--app=$want'"
+          test "$got" = "/bin/true --app=$want"
 
       - name: Launcher stages a copy for snap browsers
         run: |
@@ -159,7 +159,7 @@ jobs:
           test "$(bin/collage-maker --path)" = "$PWD/app/index.html"
           out=$(bin/collage-maker --dry-run)
           echo "$out"
-          echo "$out" | grep -E "^open -na '/(Users/[^/]+/)?Applications/[^']+\.app' --args '--app=file://"
+          echo "$out" | grep -E "^open -na '/(Users/[^/]+/)?Applications/[^']+\.app' --args --app=file://"
       - name: install.sh (install, Launchpad app, uninstall)
         run: |
           sh install.sh --from dist/collage-maker.tar.gz

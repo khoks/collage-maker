@@ -103,10 +103,19 @@ urlencode() {
 
 # ------------------------------------------------------------------ running things
 DRY_RUN=0
+
+# Prints an argument so it could be pasted into a shell: quoted only when it needs to be.
+shell_word() {
+  case $1 in
+    '' | *[!A-Za-z0-9_./:=,+%@-]*) printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 run() {
   if [ "$DRY_RUN" = 1 ]; then
-    printf '%s' "$1"; shift
-    for arg in "$@"; do printf ' %s' "'$arg'"; done
+    shell_word "$1"; shift
+    for arg in "$@"; do printf ' '; shell_word "$arg"; done
     printf '\n'
   else
     "$@"
@@ -274,7 +283,8 @@ mac_bundle() {
   printf '%s\n' "$HOME/Applications/$APP_NAME.app"
 }
 
-# Quotes a path for the Exec key of a .desktop file.
+# Quotes a path for the Exec key of a .desktop file. The sed expressions are single-quoted on purpose.
+# shellcheck disable=SC2016
 desktop_quote() {
   printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\\\\\/g' -e 's/"/\\\\"/g' -e 's/`/\\\\`/g' -e 's/\$/\\\\$/g')"
 }
