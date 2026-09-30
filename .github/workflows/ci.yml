@@ -95,11 +95,17 @@ jobs:
           mkdir -p "$dir"
           tar -xzf dist/collage-maker.tar.gz -C "$dir"
           app=$(echo "$dir"/collage-maker-*)
-          got=$(COLLAGE_MAKER_BROWSER=/bin/true "$app/collage-maker" --dry-run)
+          fake="$RUNNER_TEMP/fake-chrome"
+          mkdir -p "$fake"
+          printf '#!/bin/sh\n' > "$fake/google-chrome"
+          chmod +x "$fake/google-chrome"
+          got=$(COLLAGE_MAKER_BROWSER="$fake/google-chrome" "$app/collage-maker" --dry-run)
           want=$(python3 -c 'import sys, urllib.parse; print("file://" + urllib.parse.quote(sys.argv[1], safe="/~._-"))' "$app/collage-maker.html")
           echo "got:  $got"
           echo "want: $want"
-          test "$got" = "/bin/true --app=$want"
+          test "$got" = "$fake/google-chrome --app=$want"
+          # A browser that is not Chromium-based gets the file in a normal window instead.
+          COLLAGE_MAKER_BROWSER=/bin/true "$app/collage-maker" --dry-run | grep -F "/bin/true '$app/collage-maker.html'"
 
       - name: Launcher stages a copy for snap browsers
         run: |
